@@ -1,0 +1,59 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.popoverai/browser-automation",
+  "description": "MCP server for AI browser automation. Fork of @browserbasehq/mcp-server-browserbase with LOCAL mode default.",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/PopoverAI/browser-automation",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registry_type": "npm",
+      "registry_base_url": "https://registry.npmjs.org",
+      "identifier": "@popoverai/browser-automation",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environment_variables": [
+        {
+          "description": "Your Browserbase API key (only for cloud mode)",
+          "is_required": false,
+          "format": "string",
+          "is_secret": true,
+          "name": "BROWSERBASE_API_KEY"
+        },
+        {
+          "description": "Your Browserbase Project ID (only for cloud mode)",
+          "is_required": false,
+          "format": "string",
+          "is_secret": false,
+          "name": "BROWSERBASE_PROJECT_ID"
+        },
+        {
+          "description": "Your Gemini API key (for Stagehand AI features)",
+          "is_required": false,
+          "format": "string",
+          "is_secret": true,
+          "name": "GEMINI_API_KEY"
+        },
+        {
+          "description": "Vercel automation bypass secret (optional)",
+          "is_required": false,
+          "format": "string",
+          "is_secret": true,
+          "name": "VERCEL_AUTOMATION_BYPASS_SECRET"
+        },
+        {
+          "description": "ngrok auth token for localhost tunneling (only for cloud mode)",
+          "is_required": false,
+          "format": "string",
+          "is_secret": true,
+          "name": "NGROK_AUTHTOKEN"
+        }
+      ]
+    }
+  ]
+}

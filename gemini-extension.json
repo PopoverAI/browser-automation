@@ -1,0 +1,10 @@
+{
+  "name": "browser-automation",
+  "version": "0.1.0",
+  "mcpServers": {
+    "browser-automation": {
+      "command": "npx",
+      "args": ["@popoverai/browser-automation"]
+    }
+  }
+}
