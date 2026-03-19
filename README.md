@@ -33,14 +33,25 @@ This is a fork of [@browserbasehq/mcp-server-browserbase](https://github.com/bro
 ## Environment Variables
 
 ```
+GEMINI_API_KEY=...               # for Stagehand AI features (act, extract, observe, agent)
 BROWSERBASE_API_KEY=...          # only needed for cloud: true
 BROWSERBASE_PROJECT_ID=...       # only needed for cloud: true
-GOOGLE_GENERATIVE_AI_API_KEY=... # for agent hybrid mode
+NGROK_AUTHTOKEN=...              # only needed for cloud: true with localhost URLs
 VERCEL_AUTOMATION_BYPASS_SECRET=... # optional, for Vercel preview deployments
 ```
 
+## Localhost Tunneling (Cloud Mode)
+
+When using cloud mode (`cloud: true`), the browser runs on Browserbase's infrastructure and can't directly access your localhost. If you navigate to a localhost URL, the server automatically creates an ngrok tunnel to expose your local service to the cloud browser.
+
+- Requires `NGROK_AUTHTOKEN` environment variable
+- Tunnels are session-scoped and cleaned up automatically
+- Each tunnel gets randomly generated basic auth credentials for security
+- Only triggered when navigating to localhost URLs in cloud mode
+
 ## Usage
 
+Basic (Stagehand tools only):
 ```json
 {
   "mcpServers": {
@@ -51,6 +62,20 @@ VERCEL_AUTOMATION_BYPASS_SECRET=... # optional, for Vercel preview deployments
   }
 }
 ```
+
+With Playwright federation (adds low-level browser control tools):
+```json
+{
+  "mcpServers": {
+    "browser": {
+      "command": "npx",
+      "args": ["@popoverai/browser-automation", "--enable-playwright"]
+    }
+  }
+}
+```
+
+The `--enable-playwright` flag spawns a Playwright MCP subprocess and federates its tools (click, fill, type, etc.) alongside the Stagehand AI tools.
 
 ## License
 
