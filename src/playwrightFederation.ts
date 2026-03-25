@@ -160,4 +160,14 @@ export class PlaywrightFederation {
     this.tools = [];
     process.stderr.write(`[PlaywrightFederation] Shutdown complete\n`);
   }
+
+  /**
+   * Restart the Playwright MCP subprocess.
+   * Used when the active session changes to ensure Playwright connects to the new session.
+   */
+  async restart(): Promise<void> {
+    process.stderr.write(`[PlaywrightFederation] Restarting due to session change...\n`);
+    await this.shutdown();
+    await this.start();
+  }
 }

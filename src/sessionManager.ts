@@ -147,6 +147,8 @@ export class SessionManager {
   private defaultSessionCreationPromise: Promise<BrowserSession> | null = null;
   // Track sessions currently being cleaned up to prevent concurrent cleanup
   private cleaningUpSessions: Set<string> = new Set();
+  // Callback for session change notifications (used by Playwright federation)
+  private onActiveSessionChangedCallback: ((oldId: string, newId: string) => void) | null = null;
 
   constructor(contextId?: string) {
     this.browsers = new Map();
@@ -161,16 +163,31 @@ export class SessionManager {
   }
 
   /**
+   * Register a callback to be notified when the active session changes.
+   * Used by Playwright federation to restart when sessions switch.
+   */
+  onActiveSessionChanged(callback: (oldId: string, newId: string) => void): void {
+    this.onActiveSessionChangedCallback = callback;
+  }
+
+  /**
    * Sets the active session ID.
    * @param id The ID of the session to set as active.
    */
   setActiveSessionId(id: string): void {
+    const oldId = this.activeSessionId;
     if (this.browsers.has(id)) {
       this.activeSessionId = id;
+      if (oldId !== id && this.onActiveSessionChangedCallback) {
+        this.onActiveSessionChangedCallback(oldId, id);
+      }
     } else if (id === this.defaultSessionId) {
       // Allow setting to default ID even if session doesn't exist yet
       // (it will be created on first use via ensureDefaultSessionInternal)
       this.activeSessionId = id;
+      if (oldId !== id && this.onActiveSessionChangedCallback) {
+        this.onActiveSessionChangedCallback(oldId, id);
+      }
     } else {
       process.stderr.write(
         `[SessionManager] WARN - Set active session failed for non-existent ID: ${id}\n`,

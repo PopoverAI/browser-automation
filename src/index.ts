@@ -247,6 +247,14 @@ export default async function ({ config }: { config: z.infer<typeof configSchema
         );
       }
 
+      // Register session change handler to restart Playwright when sessions switch
+      context.getSessionManager().onActiveSessionChanged(async (oldId, newId) => {
+        process.stderr.write(
+          `[stagehand-mcp] Session changed from ${oldId} to ${newId}, restarting Playwright federation...\n`
+        );
+        await federation.restart();
+      });
+
       process.stderr.write(
         `[stagehand-mcp] Playwright federation ready with ${federation.getTools().length} tools\n`
       );

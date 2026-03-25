@@ -1,6 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "net";
-import { Browserbase } from "@browserbasehq/sdk";
 import type { SessionManager } from "./sessionManager.js";
 import type { Config } from "../config.d.ts";
 
@@ -111,25 +110,16 @@ export class CdpProxy {
         return;
       }
 
-      const browserbaseSessionId = session.stagehand.browserbaseSessionId;
-      if (!browserbaseSessionId) {
-        process.stderr.write(`[CdpProxy] Session is not a cloud session\n`);
-        clientWs.close(4001, "Active session is not a Browserbase cloud session.");
-        return;
-      }
-
-      // Get the CDP WebSocket URL from Browserbase
-      const bb = new Browserbase({ apiKey: this.config.browserbaseApiKey });
-      const sessionInfo = await bb.sessions.retrieve(browserbaseSessionId);
-
-      const cdpUrl = sessionInfo.connectUrl;
+      // Get the CDP WebSocket URL from Stagehand (works for both local and cloud sessions)
+      const cdpUrl = session.stagehand.connectURL();
       if (!cdpUrl) {
-        process.stderr.write(`[CdpProxy] No connectUrl in session info\n`);
-        clientWs.close(4002, "No connectUrl available from Browserbase session.");
+        process.stderr.write(`[CdpProxy] No CDP URL available from session\n`);
+        clientWs.close(4001, "No CDP URL available from session.");
         return;
       }
 
-      process.stderr.write(`[CdpProxy] Connecting to Browserbase CDP...\n`);
+      const isCloud = !!session.stagehand.browserbaseSessionId;
+      process.stderr.write(`[CdpProxy] Connecting to ${isCloud ? "Browserbase" : "local"} CDP: ${cdpUrl}\n`);
 
       // Connect to Browserbase CDP
       upstreamWs = new WebSocket(cdpUrl);
