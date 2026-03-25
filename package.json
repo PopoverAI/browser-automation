@@ -1,6 +1,6 @@
 {
   "name": "@popoverai/browser-automation",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MCP server for AI browser automation. Fork of @browserbasehq/mcp-server-browserbase with LOCAL mode default, Playwright federation, and Vercel header injection.",
   "license": "Apache-2.0",
   "author": "Popover AI",
