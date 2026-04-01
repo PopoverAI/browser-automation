@@ -14,20 +14,31 @@ export interface TestResult {
   notes: string;
 }
 
-const SYSTEM_PROMPT = `You are a browser test runner. Navigate to the URL and verify the assertion.
+const SYSTEM_PROMPT = `You are a browser test runner. Navigate to the URL and verify each assertion.
 
-Status meanings:
+For each assertion, determine its status:
 - "passed": The assertion is true
 - "failed": The assertion is false
-- "blocked": Cannot determine (page didn't load, auth required, CAPTCHA, ambiguous, etc.)`;
+- "blocked": Cannot determine (page didn't load, auth required, CAPTCHA, ambiguous, etc.)
+
+Return results in the same order as the assertions were provided.`;
 
 const JSON_SCHEMA = JSON.stringify({
   type: "object",
   properties: {
-    status: { enum: ["passed", "failed", "blocked"] },
-    notes: { type: "string" },
+    results: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          status: { enum: ["passed", "failed", "blocked"] },
+          notes: { type: "string" },
+        },
+        required: ["status", "notes"],
+      },
+    },
   },
-  required: ["status", "notes"],
+  required: ["results"],
 });
 
 const MCP_CONFIG = JSON.stringify({
@@ -46,10 +57,13 @@ export interface TestOptions {
 
 export async function runTest(
   url: string,
-  assertion: string,
+  assertions: string[],
   options: TestOptions = {}
-): Promise<TestResult> {
-  const userPrompt = `URL: ${url}\nAssertion: ${assertion}`;
+): Promise<TestResult[]> {
+  const assertionList = assertions
+    .map((a, i) => `${i + 1}. ${a}`)
+    .join("\n");
+  const userPrompt = `URL: ${url}\n\nAssertions:\n${assertionList}`;
 
   // Default secure configuration:
   // - tools="" blocks built-in tools (Bash, Read, Write, etc.) while MCP tools remain usable
@@ -106,20 +120,20 @@ export async function runTest(
         const response = JSON.parse(stdout);
 
         if (response.is_error) {
-          resolve({
-            status: "blocked",
+          resolve(assertions.map(() => ({
+            status: "blocked" as const,
             notes: `Claude error: ${response.result || "Unknown error"}`,
-          });
+          })));
           return;
         }
 
-        if (response.structured_output) {
-          resolve(response.structured_output as TestResult);
+        if (response.structured_output?.results) {
+          resolve(response.structured_output.results as TestResult[]);
         } else {
-          resolve({
-            status: "blocked",
+          resolve(assertions.map(() => ({
+            status: "blocked" as const,
             notes: `No structured output returned: ${response.result || ""}`,
-          });
+          })));
         }
       } catch (e) {
         reject(new Error(`Failed to parse claude output: ${stdout}`));

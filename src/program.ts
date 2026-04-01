@@ -97,9 +97,9 @@ function setupExitWatchdog(serverList: ServerList) {
 
 program
   .command("test")
-  .description("Run a browser test assertion using Claude")
+  .description("Run browser test assertions using Claude (one browser session)")
   .argument("<url>", "URL to test")
-  .argument("<assertion>", "Assertion to verify")
+  .argument("<assertions...>", "Assertions to verify")
   .option(
     "--tools <tools>",
     "Built-in Claude tools to enable (default: none for security). Example: --tools 'Bash,Read'"
@@ -108,19 +108,20 @@ program
     "--allowConfiguredMCPs",
     "Include user's configured MCP servers (default: browser MCP only)"
   )
-  .action(async (url: string, assertion: string, options: { tools?: string; allowConfiguredMCPs?: boolean }) => {
+  .action(async (url: string, assertions: string[], options: { tools?: string; allowConfiguredMCPs?: boolean }) => {
     try {
-      const result = await runTest(url, assertion, {
+      const results = await runTest(url, assertions, {
         tools: options.tools,
         allowConfiguredMCPs: options.allowConfiguredMCPs,
       });
-      console.log(JSON.stringify(result));
-      process.exit(result.status === "passed" ? 0 : 1);
+      console.log(JSON.stringify(results));
+      const allPassed = results.every(r => r.status === "passed");
+      process.exit(allPassed ? 0 : 1);
     } catch (error) {
-      console.error(JSON.stringify({
+      console.error(JSON.stringify(assertions.map(() => ({
         status: "blocked",
         notes: `Error: ${error instanceof Error ? error.message : String(error)}`,
-      }));
+      }))));
       process.exit(1);
     }
   });
