@@ -8,6 +8,7 @@ import { ServerList } from "./server.js";
 import { startHttpTransport, startStdioTransport } from "./transport.js";
 
 import { resolveConfig } from "./config.js";
+import { runTest } from "./testRunner.js";
 
 let __filename: string;
 let __dirname: string;
@@ -93,5 +94,35 @@ function setupExitWatchdog(serverList: ServerList) {
   process.on("SIGINT", handleExit);
   process.on("SIGTERM", handleExit);
 }
+
+program
+  .command("test")
+  .description("Run a browser test assertion using Claude")
+  .argument("<url>", "URL to test")
+  .argument("<assertion>", "Assertion to verify")
+  .option(
+    "--tools <tools>",
+    "Built-in Claude tools to enable (default: none for security). Example: --tools 'Bash,Read'"
+  )
+  .option(
+    "--allowConfiguredMCPs",
+    "Include user's configured MCP servers (default: browser MCP only)"
+  )
+  .action(async (url: string, assertion: string, options: { tools?: string; allowConfiguredMCPs?: boolean }) => {
+    try {
+      const result = await runTest(url, assertion, {
+        tools: options.tools,
+        allowConfiguredMCPs: options.allowConfiguredMCPs,
+      });
+      console.log(JSON.stringify(result));
+      process.exit(result.status === "passed" ? 0 : 1);
+    } catch (error) {
+      console.error(JSON.stringify({
+        status: "blocked",
+        notes: `Error: ${error instanceof Error ? error.message : String(error)}`,
+      }));
+      process.exit(1);
+    }
+  });
 
 program.parse(process.argv);

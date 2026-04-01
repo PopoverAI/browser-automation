@@ -49,7 +49,40 @@ When using cloud mode (`cloud: true`), the browser runs on Browserbase's infrast
 - Each tunnel gets randomly generated basic auth credentials for security
 - Only triggered when navigating to localhost URLs in cloud mode
 
-## Usage
+## CLI
+
+### Test Command
+
+Run browser-based assertions from the command line using Claude:
+
+```bash
+browser-automation test <url> <assertion> [options]
+```
+
+Example:
+```bash
+browser-automation test "https://example.com" "The page contains 'Example Domain'"
+# Output: {"status":"passed","notes":"..."}
+```
+
+Returns JSON with:
+- `status`: `"passed"` | `"failed"` | `"blocked"`
+- `notes`: explanation of the result
+
+Exit codes: 0 for passed, 1 for failed/blocked.
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--tools <tools>` | Enable built-in Claude tools (default: none). Example: `--tools "Bash,Read"` |
+| `--allowConfiguredMCPs` | Include your globally configured MCP servers (default: browser MCP only) |
+
+**Security:** By default, Claude only has access to browser automation tools - no shell, filesystem, or other MCPs. Use `--tools` and `--allowConfiguredMCPs` to expand access at your own risk.
+
+Requires the [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) to be installed.
+
+## MCP Usage
 
 Basic (Stagehand tools only):
 ```json
