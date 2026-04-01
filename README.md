@@ -53,23 +53,38 @@ When using cloud mode (`cloud: true`), the browser runs on Browserbase's infrast
 
 ### Test Command
 
-Run browser-based assertions from the command line using Claude:
+Run browser-based assertions from the command line using Claude. Each invocation runs a single browser session where all assertions are checked:
 
 ```bash
-browser-automation test <url> <assertion> [options]
+browser-automation test <url> <assertions...> [options]
 ```
 
-Example:
+Examples:
 ```bash
-browser-automation test "https://example.com" "The page contains 'Example Domain'"
-# Output: {"status":"passed","notes":"..."}
+# Single assertion
+browser-automation test "https://example.com" "The page has a heading"
+
+# Multiple assertions (same browser session)
+browser-automation test "https://example.com" \
+  "The page has a heading" \
+  "There is a link on the page" \
+  "The title contains 'Example'"
 ```
 
-Returns JSON with:
+Returns a JSON array of results (one per assertion):
+```json
+[
+  {"status":"passed","notes":"The page has a heading 'Example Domain'"},
+  {"status":"passed","notes":"There is a link that says 'More information'"},
+  {"status":"passed","notes":"The title is 'Example Domain'"}
+]
+```
+
+Each result contains:
 - `status`: `"passed"` | `"failed"` | `"blocked"`
 - `notes`: explanation of the result
 
-Exit codes: 0 for passed, 1 for failed/blocked.
+Exit codes: 0 if all assertions pass, 1 otherwise.
 
 **Options:**
 
