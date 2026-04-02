@@ -109,13 +109,18 @@ program
     "--allowConfiguredMCPs",
     "Include user's configured MCP servers (default: browser MCP only)"
   )
-  .action(async (url: string, assertions: string[], options: { tools?: string; allowConfiguredMCPs?: boolean }, cmd: { optsWithGlobals: () => { cloud?: boolean } }) => {
+  .option(
+    "--useAgent",
+    "Encourage Claude to use the Agent tool for multi-step tasks"
+  )
+  .action(async (url: string, assertions: string[], options: { tools?: string; allowConfiguredMCPs?: boolean; useAgent?: boolean }, cmd: { optsWithGlobals: () => { cloud?: boolean } }) => {
     const globalOpts = cmd.optsWithGlobals();
     try {
       const result = await runTest(url, assertions, {
         tools: options.tools,
         allowConfiguredMCPs: options.allowConfiguredMCPs,
         cloud: globalOpts.cloud,
+        useAgent: options.useAgent,
       });
       console.log(JSON.stringify(result));
       const allPassed = result.results.every(r => r.status === "passed");

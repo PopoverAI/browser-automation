@@ -90,6 +90,7 @@ export interface TestOptions {
   tools?: string;
   allowConfiguredMCPs?: boolean;
   cloud?: boolean;
+  useAgent?: boolean;
 }
 
 function readStagehandUsage(usageFile: string): StagehandUsage | undefined {
@@ -134,7 +135,9 @@ export async function runTest(
     "--json-schema",
     JSON_SCHEMA,
     "--system-prompt",
-    SYSTEM_PROMPT,
+    options.useAgent
+      ? SYSTEM_PROMPT + "\n\nPrefer using the Agent tool to complete tasks. Only fall back to other approaches if the Agent tool is insufficient."
+      : SYSTEM_PROMPT,
     userPrompt,
   ];
 
