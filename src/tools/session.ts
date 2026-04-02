@@ -41,7 +41,8 @@ async function handleCreateSession(
     try {
       const sessionManager = context.getSessionManager();
       const config = context.config; // Get config from context
-      const useCloud = params.cloud ?? false;
+      // Respect config.cloud as default, but allow params.cloud to override
+      const useCloud = params.cloud ?? config.cloud ?? false;
       let targetSessionId: string;
 
       // Session ID Strategy: Use raw sessionId for both internal tracking and Browserbase operations

@@ -1,7 +1,7 @@
 import { Stagehand } from "@browserbasehq/stagehand";
 import type { Config } from "../config.d.ts";
 import { clearScreenshotsForSession } from "./mcp/resources.js";
-import type { BrowserSession, CreateSessionParams } from "./types/types.js";
+import type { BrowserSession, CreateSessionParams, StagehandTokenUsage } from "./types/types.js";
 import { randomUUID } from "crypto";
 
 /**
@@ -216,7 +216,7 @@ export class SessionManager {
     resumeSessionId?: string,
     cloud?: boolean,
   ): Promise<BrowserSession> {
-    const useCloud = cloud ?? false;
+    const useCloud = cloud ?? config.cloud ?? false;
 
     // Only require credentials for cloud mode
     if (useCloud) {

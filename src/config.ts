@@ -17,6 +17,7 @@ export type CLIOptions = {
   keepAlive?: boolean;
   experimental?: boolean;
   enablePlaywright?: boolean;
+  cloud?: boolean;
 };
 
 // Default Configuration Values
@@ -99,6 +100,7 @@ export async function configFromCLIOptions(
     keepAlive: cliOptions.keepAlive,
     experimental: cliOptions.experimental,
     enablePlaywright: cliOptions.enablePlaywright,
+    cloud: cliOptions.cloud,
   };
 }
 

@@ -64,6 +64,7 @@ program
   .option("--keepAlive", "Enable Browserbase Keep Alive Session")
   .option("--experimental", "Enable experimental features")
   .option("--enable-playwright", "Enable Playwright MCP federation for low-level browser control tools")
+  .option("--cloud", "Default to Browserbase cloud mode instead of local Playwright")
   .action(async (options) => {
     const config = await resolveConfig(options);
     const serverList = new ServerList(async () =>
@@ -108,11 +109,13 @@ program
     "--allowConfiguredMCPs",
     "Include user's configured MCP servers (default: browser MCP only)"
   )
-  .action(async (url: string, assertions: string[], options: { tools?: string; allowConfiguredMCPs?: boolean }) => {
+  .action(async (url: string, assertions: string[], options: { tools?: string; allowConfiguredMCPs?: boolean }, cmd: { optsWithGlobals: () => { cloud?: boolean } }) => {
+    const globalOpts = cmd.optsWithGlobals();
     try {
       const results = await runTest(url, assertions, {
         tools: options.tools,
         allowConfiguredMCPs: options.allowConfiguredMCPs,
+        cloud: globalOpts.cloud,
       });
       console.log(JSON.stringify(results));
       const allPassed = results.every(r => r.status === "passed");

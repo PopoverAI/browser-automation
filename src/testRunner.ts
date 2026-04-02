@@ -41,18 +41,25 @@ const JSON_SCHEMA = JSON.stringify({
   required: ["results"],
 });
 
-const MCP_CONFIG = JSON.stringify({
-  mcpServers: {
-    browser: {
-      command: "node",
-      args: [CLI_PATH],
+function getMcpConfig(cloud?: boolean): string {
+  const args = [CLI_PATH];
+  if (cloud) {
+    args.push("--cloud");
+  }
+  return JSON.stringify({
+    mcpServers: {
+      browser: {
+        command: "node",
+        args,
+      },
     },
-  },
-});
+  });
+}
 
 export interface TestOptions {
   tools?: string;
   allowConfiguredMCPs?: boolean;
+  cloud?: boolean;
 }
 
 export async function runTest(
@@ -77,7 +84,7 @@ export async function runTest(
     "--tools",
     options.tools ?? "",
     "--mcp-config",
-    MCP_CONFIG,
+    getMcpConfig(options.cloud),
     ...(options.allowConfiguredMCPs ? [] : ["--strict-mcp-config"]),
     "--permission-mode",
     "bypassPermissions",

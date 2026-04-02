@@ -92,6 +92,7 @@ Exit codes: 0 if all assertions pass, 1 otherwise.
 |--------|-------------|
 | `--tools <tools>` | Enable built-in Claude tools (default: none). Example: `--tools "Bash,Read"` |
 | `--allowConfiguredMCPs` | Include your globally configured MCP servers (default: browser MCP only) |
+| `--cloud` | Use Browserbase cloud browser instead of local Playwright. Requires `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID` environment variables. |
 
 **Security:** By default, Claude only has access to browser automation tools - no shell, filesystem, or other MCPs. Use `--tools` and `--allowConfiguredMCPs` to expand access at your own risk.
 

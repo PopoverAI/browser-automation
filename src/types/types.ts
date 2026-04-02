@@ -22,10 +22,19 @@ export type CreateSessionParams = {
   meta?: Record<string, any>;
 };
 
+export type StagehandTokenUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  reasoning_tokens?: number;
+  cached_input_tokens?: number;
+  inference_time_ms?: number;
+};
+
 export type BrowserSession = {
   page: Page;
   sessionId: string;
   stagehand: Stagehand;
+  usage?: StagehandTokenUsage;
 };
 
 export type ToolActionResult =

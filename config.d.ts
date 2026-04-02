@@ -112,4 +112,12 @@ export type Config = {
    * @default false
    */
   enablePlaywright?: boolean;
+  /**
+   * Default to Browserbase cloud mode instead of local Playwright.
+   * When true, stagehand_session_create will use cloud=true by default.
+   * Useful for CI/CD environments without a local browser.
+   *
+   * @default false
+   */
+  cloud?: boolean;
 };
