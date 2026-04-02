@@ -112,13 +112,13 @@ program
   .action(async (url: string, assertions: string[], options: { tools?: string; allowConfiguredMCPs?: boolean }, cmd: { optsWithGlobals: () => { cloud?: boolean } }) => {
     const globalOpts = cmd.optsWithGlobals();
     try {
-      const results = await runTest(url, assertions, {
+      const result = await runTest(url, assertions, {
         tools: options.tools,
         allowConfiguredMCPs: options.allowConfiguredMCPs,
         cloud: globalOpts.cloud,
       });
-      console.log(JSON.stringify(results));
-      const allPassed = results.every(r => r.status === "passed");
+      console.log(JSON.stringify(result));
+      const allPassed = result.results.every(r => r.status === "passed");
       process.exit(allPassed ? 0 : 1);
     } catch (error) {
       console.error(JSON.stringify(assertions.map(() => ({

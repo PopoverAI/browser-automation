@@ -6,6 +6,7 @@ import { listResources, readResource } from "./mcp/resources.js";
 import { SessionManager } from "./sessionManager.js";
 import { NgrokManager } from "./ngrokManager.js";
 import type { MCPTool } from "./types/types.js";
+import { writeFileSync } from "fs";
 
 /**
  * MCP Server Context
@@ -108,6 +109,27 @@ export class Context {
         content: [{ type: "text", text: `Error: ${errorMessage}` }],
         isError: true,
       };
+    } finally {
+      this.writeUsageMetrics();
+    }
+  }
+
+  private writeUsageMetrics(): void {
+    const usageFile = process.env.STAGEHAND_USAGE_FILE;
+    if (!usageFile) return;
+    try {
+      for (const [, session] of this.sessionManager.getAllSessions().entries()) {
+        const metrics = session.stagehand.stagehandMetrics;
+        writeFileSync(usageFile, JSON.stringify({
+          prompt_tokens: metrics.totalPromptTokens,
+          completion_tokens: metrics.totalCompletionTokens,
+          reasoning_tokens: metrics.totalReasoningTokens,
+          cached_tokens: metrics.totalCachedInputTokens,
+          inference_time_ms: metrics.totalInferenceTimeMs,
+        }));
+      }
+    } catch {
+      // Best effort
     }
   }
 

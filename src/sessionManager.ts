@@ -539,6 +539,10 @@ export class SessionManager {
     }
   }
 
+  getAllSessions(): Map<string, BrowserSession> {
+    return this.browsers;
+  }
+
   // Function to close all managed browser sessions gracefully
   async closeAllSessions(): Promise<void> {
     process.stderr.write(`[SessionManager] Closing all sessions...\n`);

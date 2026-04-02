@@ -1,6 +1,8 @@
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 import * as path from "path";
+import * as fs from "fs";
+import * as os from "os";
 
 // Resolve path to our own CLI for MCP config
 const __filename = fileURLToPath(import.meta.url);
@@ -12,6 +14,29 @@ type TestStatus = "passed" | "failed" | "blocked";
 export interface TestResult {
   status: TestStatus;
   notes: string;
+}
+
+export interface StagehandUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  reasoning_tokens?: number;
+  cached_tokens?: number;
+  inference_time_ms?: number;
+}
+
+export interface ClaudeUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
+}
+
+export interface TestRunResult {
+  results: TestResult[];
+  usage?: {
+    claude?: ClaudeUsage;
+    stagehand?: StagehandUsage;
+  };
 }
 
 const SYSTEM_PROMPT = `You are a browser test runner. Navigate to the URL and verify each assertion.
@@ -41,16 +66,21 @@ const JSON_SCHEMA = JSON.stringify({
   required: ["results"],
 });
 
-function getMcpConfig(cloud?: boolean): string {
+function getMcpConfig(cloud?: boolean, usageFile?: string): string {
   const args = [CLI_PATH];
   if (cloud) {
     args.push("--cloud");
+  }
+  const env: Record<string, string> = {};
+  if (usageFile) {
+    env.STAGEHAND_USAGE_FILE = usageFile;
   }
   return JSON.stringify({
     mcpServers: {
       browser: {
         command: "node",
         args,
+        ...(Object.keys(env).length > 0 && { env }),
       },
     },
   });
@@ -62,11 +92,20 @@ export interface TestOptions {
   cloud?: boolean;
 }
 
+function readStagehandUsage(usageFile: string): StagehandUsage | undefined {
+  try {
+    const content = fs.readFileSync(usageFile, "utf-8");
+    return JSON.parse(content) as StagehandUsage;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function runTest(
   url: string,
   assertions: string[],
   options: TestOptions = {}
-): Promise<TestResult[]> {
+): Promise<TestRunResult> {
   const assertionList = assertions
     .map((a, i) => `${i + 1}. ${a}`)
     .join("\n");
@@ -79,12 +118,14 @@ export async function runTest(
   //
   // Users can override with --tools and --allowConfiguredMCPs at their own risk
 
+  const usageFile = path.join(os.tmpdir(), `stagehand-usage-${Date.now()}.json`);
+
   const args = [
     "-p",
     "--tools",
     options.tools ?? "",
     "--mcp-config",
-    getMcpConfig(options.cloud),
+    getMcpConfig(options.cloud, usageFile),
     ...(options.allowConfiguredMCPs ? [] : ["--strict-mcp-config"]),
     "--permission-mode",
     "bypassPermissions",
@@ -125,22 +166,38 @@ export async function runTest(
 
       try {
         const response = JSON.parse(stdout);
+        const stagehandUsage = readStagehandUsage(usageFile);
+        const usage = {
+          claude: response.usage as ClaudeUsage | undefined,
+          stagehand: stagehandUsage,
+        };
+        // Clean up temp file
+        try { fs.unlinkSync(usageFile); } catch { /* ignore */ }
 
         if (response.is_error) {
-          resolve(assertions.map(() => ({
-            status: "blocked" as const,
-            notes: `Claude error: ${response.result || "Unknown error"}`,
-          })));
+          resolve({
+            results: assertions.map(() => ({
+              status: "blocked" as const,
+              notes: `Claude error: ${response.result || "Unknown error"}`,
+            })),
+            usage,
+          });
           return;
         }
 
         if (response.structured_output?.results) {
-          resolve(response.structured_output.results as TestResult[]);
+          resolve({
+            results: response.structured_output.results as TestResult[],
+            usage,
+          });
         } else {
-          resolve(assertions.map(() => ({
-            status: "blocked" as const,
-            notes: `No structured output returned: ${response.result || ""}`,
-          })));
+          resolve({
+            results: assertions.map(() => ({
+              status: "blocked" as const,
+              notes: `No structured output returned: ${response.result || ""}`,
+            })),
+            usage,
+          });
         }
       } catch (e) {
         reject(new Error(`Failed to parse claude output: ${stdout}`));
