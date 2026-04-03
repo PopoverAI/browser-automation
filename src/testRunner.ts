@@ -121,6 +121,10 @@ export async function runTest(
 
   const usageFile = path.join(os.tmpdir(), `stagehand-usage-${Date.now()}.json`);
 
+  const systemPrompt = options.useAgent
+    ? SYSTEM_PROMPT + "\n\nALWAYS use the Agent tool to complete tasks. Only fall back to other approaches if the Agent tool is insufficient."
+    : SYSTEM_PROMPT;
+
   const args = [
     "-p",
     "--tools",
@@ -135,9 +139,7 @@ export async function runTest(
     "--json-schema",
     JSON_SCHEMA,
     "--system-prompt",
-    options.useAgent
-      ? SYSTEM_PROMPT + "\n\nPrefer using the Agent tool to complete tasks. Only fall back to other approaches if the Agent tool is insufficient."
-      : SYSTEM_PROMPT,
+    systemPrompt,
     userPrompt,
   ];
 
