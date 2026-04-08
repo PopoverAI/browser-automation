@@ -20,6 +20,8 @@ export type CreateSessionParams = {
   browserbaseSessionID?: string;
   browserbaseSessionCreateParams?: any;
   meta?: Record<string, any>;
+  browserWidth?: number;
+  browserHeight?: number;
 };
 
 export type StagehandTokenUsage = {

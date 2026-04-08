@@ -22,6 +22,22 @@ const CreateSessionInputSchema = z.object({
     .describe(
       "Use Browserbase cloud browser instead of local Playwright. Default: false (local).",
     ),
+  browserWidth: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "Browser viewport width in pixels. Default: 1024 (local) or 1288 (cloud).",
+    ),
+  browserHeight: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "Browser viewport height in pixels. Default: 768 (local) or 711 (cloud).",
+    ),
 });
 type CreateSessionInput = z.infer<typeof CreateSessionInputSchema>;
 
@@ -58,11 +74,11 @@ async function handleCreateSession(
 
       let session: BrowserSession;
       const defaultSessionId = sessionManager.getDefaultSessionId();
-      if (targetSessionId === defaultSessionId && !useCloud) {
-        // Default session uses ensureDefaultSessionInternal (always local)
+      if (targetSessionId === defaultSessionId && !useCloud && !params.browserWidth && !params.browserHeight) {
+        // Default session uses ensureDefaultSessionInternal (always local, no viewport override)
         session = await sessionManager.ensureDefaultSessionInternal(config);
       } else {
-        // When user provides a sessionId or requests cloud, create new session
+        // When user provides a sessionId, requests cloud, or specifies viewport, create new session
         // Note: targetSessionId is used for internal tracking in SessionManager
         // while params.sessionId is the Browserbase session ID to resume (cloud only)
         session = await sessionManager.createNewBrowserSession(
@@ -70,6 +86,8 @@ async function handleCreateSession(
           config,
           useCloud ? params.sessionId : undefined, // Browserbase session ID to resume (cloud only)
           useCloud, // Pass cloud flag
+          params.browserWidth,
+          params.browserHeight,
         );
       }
 

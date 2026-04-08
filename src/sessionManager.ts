@@ -32,6 +32,9 @@ export const createStagehandInstance = async (
     process.env.GOOGLE_API_KEY ||
     process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 
+  const viewportWidth = params.browserWidth ?? config.viewPort?.browserWidth;
+  const viewportHeight = params.browserHeight ?? config.viewPort?.browserHeight;
+
   const stagehand = new Stagehand({
     env: useCloud ? "BROWSERBASE" : "LOCAL",
     ...(useCloud && { apiKey, projectId }),
@@ -53,8 +56,8 @@ export const createStagehandInstance = async (
         keepAlive: config.keepAlive ?? false,
         browserSettings: {
           viewport: {
-            width: config.viewPort?.browserWidth ?? 1288,
-            height: config.viewPort?.browserHeight ?? 711,
+            width: viewportWidth ?? 1288,
+            height: viewportHeight ?? 711,
           },
           context: config.context?.contextId
             ? {
@@ -75,6 +78,17 @@ export const createStagehandInstance = async (
   });
 
   await stagehand.init();
+
+  // Apply viewport for local sessions (Playwright default is 800x600)
+  if (!useCloud && (viewportWidth || viewportHeight)) {
+    const page = stagehand.context.pages()[0];
+    if (page) {
+      await page.setViewportSize(
+        viewportWidth ?? 1024,
+        viewportHeight ?? 768,
+      );
+    }
+  }
 
   // Inject Vercel bypass headers via CDP Fetch interception (only for *.vercel.app domains)
   if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) {
@@ -215,6 +229,8 @@ export class SessionManager {
     config: Config,
     resumeSessionId?: string,
     cloud?: boolean,
+    browserWidth?: number,
+    browserHeight?: number,
   ): Promise<BrowserSession> {
     const useCloud = cloud ?? config.cloud ?? false;
 
@@ -242,6 +258,8 @@ export class SessionManager {
         {
           cloud: useCloud,
           ...(resumeSessionId && { browserbaseSessionID: resumeSessionId }),
+          ...(browserWidth !== undefined && { browserWidth }),
+          ...(browserHeight !== undefined && { browserHeight }),
         },
         newSessionId,
       );
