@@ -1,0 +1,8 @@
+{
+  "baseUrl": "https://example.com",
+  "steps": [
+    { "step": "arrange", "description": "Navigate to the page" },
+    { "step": "assert", "key": "has-heading", "description": "The page has a heading that says Example Domain" },
+    { "step": "assert", "key": "has-link", "description": "There is a link on the page" }
+  ]
+}

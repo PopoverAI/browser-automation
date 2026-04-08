@@ -59,6 +59,12 @@ export function parseScenario(input: string): Scenario {
     }
   }
 
+  // Validate at least one assert step
+  const assertSteps = (scenario.steps as Step[]).filter(s => s.step === "assert");
+  if (assertSteps.length === 0) {
+    throw new Error("Scenario must have at least one assert step");
+  }
+
   // Validate assert key uniqueness
   const keys = new Set<string>();
   for (const s of scenario.steps as Step[]) {
