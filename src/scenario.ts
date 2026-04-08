@@ -16,6 +16,47 @@ export interface Scenario {
 
 const VALID_STEP_TYPES = new Set(["arrange", "act", "assert"]);
 
+/**
+ * Validate a scenario object. Throws on invalid input.
+ * Used by both parseScenario (CLI string/file input) and the MCP tool (object input).
+ */
+export function validateScenario(scenario: Scenario): void {
+  if (!scenario.baseUrl || typeof scenario.baseUrl !== "string") {
+    throw new Error("Scenario must have a non-empty \"baseUrl\" string");
+  }
+
+  if (!Array.isArray(scenario.steps) || scenario.steps.length === 0) {
+    throw new Error("Scenario must have a non-empty \"steps\" array");
+  }
+
+  for (let i = 0; i < scenario.steps.length; i++) {
+    const s = scenario.steps[i];
+    if (!VALID_STEP_TYPES.has(s.step)) {
+      throw new Error(`Step ${i + 1}: "step" must be "arrange", "act", or "assert" (got "${String(s.step)}")`);
+    }
+    if (!s.description) {
+      throw new Error(`Step ${i + 1}: "description" must be a non-empty string`);
+    }
+  }
+
+  // Validate at least one assert step
+  const assertSteps = scenario.steps.filter(s => s.step === "assert");
+  if (assertSteps.length === 0) {
+    throw new Error("Scenario must have at least one assert step");
+  }
+
+  // Validate assert key uniqueness
+  const keys = new Set<string>();
+  for (const s of scenario.steps) {
+    if (s.step === "assert" && s.key) {
+      if (keys.has(s.key)) {
+        throw new Error(`Duplicate assert key "${s.key}"`);
+      }
+      keys.add(s.key);
+    }
+  }
+}
+
 export function parseScenario(input: string): Scenario {
   let raw: unknown;
   if (input.trimStart().startsWith("{")) {
@@ -39,44 +80,9 @@ export function parseScenario(input: string): Scenario {
     }
   }
 
-  const scenario = raw as Record<string, unknown>;
-
-  if (!scenario.baseUrl || typeof scenario.baseUrl !== "string") {
-    throw new Error("Scenario must have a non-empty \"baseUrl\" string");
-  }
-
-  if (!Array.isArray(scenario.steps) || scenario.steps.length === 0) {
-    throw new Error("Scenario must have a non-empty \"steps\" array");
-  }
-
-  for (let i = 0; i < scenario.steps.length; i++) {
-    const s = scenario.steps[i] as Record<string, unknown>;
-    if (!VALID_STEP_TYPES.has(s.step as string)) {
-      throw new Error(`Step ${i + 1}: "step" must be "arrange", "act", or "assert" (got "${String(s.step)}")`);
-    }
-    if (!s.description || typeof s.description !== "string") {
-      throw new Error(`Step ${i + 1}: "description" must be a non-empty string`);
-    }
-  }
-
-  // Validate at least one assert step
-  const assertSteps = (scenario.steps as Step[]).filter(s => s.step === "assert");
-  if (assertSteps.length === 0) {
-    throw new Error("Scenario must have at least one assert step");
-  }
-
-  // Validate assert key uniqueness
-  const keys = new Set<string>();
-  for (const s of scenario.steps as Step[]) {
-    if (s.step === "assert" && s.key) {
-      if (keys.has(s.key)) {
-        throw new Error(`Duplicate assert key "${s.key}"`);
-      }
-      keys.add(s.key);
-    }
-  }
-
-  return scenario as unknown as Scenario;
+  const scenario = raw as Scenario;
+  validateScenario(scenario);
+  return scenario;
 }
 
 export function buildInstruction(scenario: Scenario): string {
