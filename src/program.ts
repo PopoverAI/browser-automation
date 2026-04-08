@@ -9,6 +9,8 @@ import { startHttpTransport, startStdioTransport } from "./transport.js";
 
 import { resolveConfig } from "./config.js";
 import { runTest } from "./testRunner.js";
+import { Stagehand } from "@browserbasehq/stagehand";
+import { parseScenario, buildInstruction, buildOutputSchema, getAssertCount } from "./scenario.js";
 
 let __filename: string;
 let __dirname: string;
@@ -99,8 +101,12 @@ function setupExitWatchdog(serverList: ServerList) {
 program
   .command("test")
   .description("Run browser test assertions using Claude (one browser session)")
-  .argument("<url>", "URL to test")
-  .argument("<assertions...>", "Assertions to verify")
+  .argument("[url]", "URL to test")
+  .argument("[assertions...]", "Assertions to verify")
+  .option(
+    "--scenario <scenario>",
+    "JSON scenario string or file path (mutually exclusive with positional url/assertions)"
+  )
   .option(
     "--tools <tools>",
     "Built-in Claude tools to enable (default: none for security). Example: --tools 'Bash,Read'"
@@ -113,24 +119,104 @@ program
     "--useAgent",
     "Encourage Claude to use the Agent tool for multi-step tasks"
   )
-  .action(async (url: string, assertions: string[], options: { tools?: string; allowConfiguredMCPs?: boolean; useAgent?: boolean }, cmd: { optsWithGlobals: () => { cloud?: boolean } }) => {
+  .action(async (url: string | undefined, assertions: string[], options: { scenario?: string; tools?: string; allowConfiguredMCPs?: boolean; useAgent?: boolean }, cmd: { optsWithGlobals: () => { cloud?: boolean } }) => {
     const globalOpts = cmd.optsWithGlobals();
-    try {
-      const result = await runTest(url, assertions, {
-        tools: options.tools,
-        allowConfiguredMCPs: options.allowConfiguredMCPs,
-        cloud: globalOpts.cloud,
-        useAgent: options.useAgent,
-      });
-      console.log(JSON.stringify(result));
-      const allPassed = result.results.every(r => r.status === "passed");
-      process.exit(allPassed ? 0 : 1);
-    } catch (error) {
-      console.error(JSON.stringify(assertions.map(() => ({
-        status: "blocked",
-        notes: `Error: ${error instanceof Error ? error.message : String(error)}`,
-      }))));
+
+    if (options.scenario && (url || assertions.length)) {
+      console.error("Error: --scenario cannot be used with positional url/assertions arguments");
       process.exit(1);
+    }
+    if (!options.scenario && (!url || !assertions.length)) {
+      console.error("Error: either --scenario or <url> <assertions...> is required");
+      process.exit(1);
+    }
+
+    if (options.scenario) {
+      // Scenario path: use Stagehand agent directly
+      let scenario;
+      try {
+        scenario = parseScenario(options.scenario);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+
+      const instruction = buildInstruction(scenario);
+      const outputSchema = buildOutputSchema(scenario);
+      const assertCount = getAssertCount(scenario);
+
+      const modelApiKey =
+        process.env.GEMINI_API_KEY ||
+        process.env.GOOGLE_API_KEY ||
+        process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+      const stagehand = new Stagehand({
+        env: globalOpts.cloud ? "BROWSERBASE" : "LOCAL",
+        model: modelApiKey
+          ? { apiKey: modelApiKey, modelName: "google/gemini-3-flash-preview" }
+          : "google/gemini-3-flash-preview",
+        experimental: true,
+      });
+
+      try {
+        await stagehand.init();
+        const page = stagehand.context.pages()[0];
+        await page.goto(scenario.baseUrl);
+
+        const agent = stagehand.agent({
+          mode: "hybrid",
+          model: "google/gemini-3-flash-preview",
+        });
+
+        const result = await agent.execute({
+          instruction,
+          maxSteps: 30,
+          output: outputSchema,
+        });
+
+        const output = result.output as { results: { status: string; notes: string; key?: string }[] } | undefined;
+        if (output?.results) {
+          console.log(JSON.stringify({ results: output.results }));
+          const allPassed = output.results.every(r => r.status === "passed");
+          process.exit(allPassed ? 0 : 1);
+        } else {
+          const blocked = Array.from({ length: assertCount }, () => ({
+            status: "blocked",
+            notes: "No structured output returned from agent",
+          }));
+          console.error(JSON.stringify({ results: blocked }));
+          process.exit(1);
+        }
+      } catch (error) {
+        const errorMsg = `Error: ${error instanceof Error ? error.message : String(error)}`;
+        const blocked = Array.from({ length: assertCount }, () => ({
+          status: "blocked",
+          notes: errorMsg,
+        }));
+        console.error(JSON.stringify({ results: blocked }));
+        process.exit(1);
+      } finally {
+        await stagehand.close();
+      }
+    } else {
+      // Legacy path: Claude subprocess for simple url + assertions
+      try {
+        const result = await runTest(url!, assertions, {
+          tools: options.tools,
+          allowConfiguredMCPs: options.allowConfiguredMCPs,
+          cloud: globalOpts.cloud,
+          useAgent: options.useAgent,
+        });
+        console.log(JSON.stringify(result));
+        const allPassed = result.results.every(r => r.status === "passed");
+        process.exit(allPassed ? 0 : 1);
+      } catch (error) {
+        console.error(JSON.stringify(assertions.map(() => ({
+          status: "blocked",
+          notes: `Error: ${error instanceof Error ? error.message : String(error)}`,
+        }))));
+        process.exit(1);
+      }
     }
   });
 
