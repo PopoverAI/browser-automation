@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { Tool, CallToolResult, TextContent } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 
 /**
  * PlaywrightFederation - Spawns Playwright MCP as a subprocess and
@@ -18,7 +19,37 @@ export interface FederatedTool {
   name: string;
   originalName: string;
   description: string;
-  inputSchema: Tool["inputSchema"];
+  inputSchema: Record<string, z.ZodTypeAny>;
+}
+
+/**
+ * Converts a JSON Schema inputSchema (from the MCP protocol) into a Zod "raw shape"
+ * compatible with McpServer.tool(). We use z.any() for each property since the
+ * downstream Playwright MCP handles its own validation.
+ */
+function jsonSchemaToZodShape(
+  schema: Tool["inputSchema"],
+): Record<string, z.ZodTypeAny> {
+  const properties = schema.properties ?? {};
+  const required = new Set(schema.required ?? []);
+  const shape: Record<string, z.ZodTypeAny> = {};
+
+  for (const [key, prop] of Object.entries(properties)) {
+    let field: z.ZodTypeAny = z.any();
+    const description =
+      typeof prop === "object" && prop !== null && "description" in prop
+        ? (prop as { description?: string }).description
+        : undefined;
+    if (description) {
+      field = field.describe(description);
+    }
+    if (!required.has(key)) {
+      field = field.optional();
+    }
+    shape[key] = field;
+  }
+
+  return shape;
 }
 
 export class PlaywrightFederation {
@@ -75,7 +106,7 @@ export class PlaywrightFederation {
           name: tool.name.replace(/^browser_/, "playwright_"),
           originalName: tool.name,
           description: tool.description || "",
-          inputSchema: tool.inputSchema,
+          inputSchema: jsonSchemaToZodShape(tool.inputSchema),
         }));
 
       process.stderr.write(

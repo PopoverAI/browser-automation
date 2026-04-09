@@ -230,7 +230,7 @@ export default async function ({ config }: { config: z.infer<typeof configSchema
         server.tool(
           tool.name,
           tool.description,
-          tool.inputSchema as Record<string, z.ZodTypeAny>,
+          tool.inputSchema,
           async (params: Record<string, unknown>): Promise<CallToolResult> => {
             try {
               const result = await federation.callTool(tool.originalName, params);
