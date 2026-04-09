@@ -45,7 +45,9 @@ export async function resolveConfig(cliOptions: CLIOptions): Promise<Config> {
   // --- Add Browserbase Env Vars ---
   if (!mergedConfig.modelApiKey) {
     mergedConfig.modelApiKey =
-      process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      process.env.MODEL_API_KEY ||
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY;
   }
 
   // --------------------------------

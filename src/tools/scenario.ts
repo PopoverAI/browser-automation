@@ -47,7 +47,7 @@ async function handleScenario(
 
       const agent = stagehand.agent({
         mode: "hybrid",
-        model: "google/gemini-3-flash-preview",
+        model: context.config.modelName,
       });
 
       const result = await agent.execute({

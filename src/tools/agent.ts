@@ -44,7 +44,7 @@ async function handleAgent(
       // Hybrid mode combines DOM-based and coordinate-based actions
       const agent = stagehand.agent({
         mode: "hybrid",
-        model: "google/gemini-3-flash-preview",
+        model: context.config.modelName,
       });
 
       // Execute the task

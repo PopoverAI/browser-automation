@@ -33,7 +33,8 @@ This is a fork of [@browserbasehq/mcp-server-browserbase](https://github.com/bro
 ## Environment Variables
 
 ```
-GEMINI_API_KEY=...               # for Stagehand AI features (act, extract, observe, agent)
+MODEL_API_KEY=...                # API key for the configured model provider (works with any provider)
+GEMINI_API_KEY=...               # alternative to MODEL_API_KEY for Gemini (the default model)
 BROWSERBASE_API_KEY=...          # only needed for cloud: true
 BROWSERBASE_PROJECT_ID=...       # only needed for cloud: true
 NGROK_AUTHTOKEN=...              # only needed for cloud: true with localhost URLs
@@ -53,15 +54,16 @@ When using cloud mode (`cloud: true`), the browser runs on Browserbase's infrast
 
 ### Test Command
 
-Run browser-based assertions from the command line using Claude. Each invocation runs a single browser session where all assertions are checked:
+Run browser-based assertions from the command line using the Stagehand agent. Each invocation runs a single browser session where all assertions are checked:
 
 ```bash
 browser-automation test <url> <assertions...> [options]
+browser-automation test --scenario <json-or-file> [options]
 ```
 
 Examples:
 ```bash
-# Single assertion
+# Simple assertions
 browser-automation test "https://example.com" "The page has a heading"
 
 # Multiple assertions (same browser session)
@@ -69,15 +71,19 @@ browser-automation test "https://example.com" \
   "The page has a heading" \
   "There is a link on the page" \
   "The title contains 'Example'"
+
+# Using a custom model
+browser-automation test --modelName "anthropic/claude-haiku-4-5" \
+  --modelApiKey "sk-ant-..." \
+  "https://example.com" "The page has a heading"
+
+# Multi-step scenario (arrange/act/assert)
+browser-automation test --scenario '{"baseUrl":"https://example.com","steps":[{"step":"act","description":"Click the More information link"},{"step":"assert","description":"Page navigated away from example.com"}]}'
 ```
 
-Returns a JSON array of results (one per assertion):
+Returns JSON results (one per assertion):
 ```json
-[
-  {"status":"passed","notes":"The page has a heading 'Example Domain'"},
-  {"status":"passed","notes":"There is a link that says 'More information'"},
-  {"status":"passed","notes":"The title is 'Example Domain'"}
-]
+{"results":[{"status":"passed","notes":"The page has a heading 'Example Domain'"}]}
 ```
 
 Each result contains:
@@ -90,14 +96,10 @@ Exit codes: 0 if all assertions pass, 1 otherwise.
 
 | Option | Description |
 |--------|-------------|
-| `--tools <tools>` | Enable built-in Claude tools (default: none). Example: `--tools "Bash,Read"` |
-| `--allowConfiguredMCPs` | Include your globally configured MCP servers (default: browser MCP only) |
-| `--useAgent` | Encourage Claude to prefer the Agent tool for multi-step tasks |
-| `--cloud` | Use Browserbase cloud browser instead of local Playwright. Requires `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID` environment variables. |
-
-**Security:** By default, Claude only has access to browser automation tools - no shell, filesystem, or other MCPs. Use `--tools` and `--allowConfiguredMCPs` to expand access at your own risk.
-
-Requires the [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) to be installed.
+| `--scenario <json\|file>` | JSON scenario string or file path (mutually exclusive with positional url/assertions) |
+| `--modelName <model>` | Model to use (default: `google/gemini-3-flash-preview`) |
+| `--modelApiKey <key>` | API key for the model provider |
+| `--cloud` | Use Browserbase cloud browser instead of local Playwright |
 
 ## MCP Usage
 
@@ -107,19 +109,25 @@ Basic (Stagehand tools only):
   "mcpServers": {
     "browser": {
       "command": "npx",
-      "args": ["@popoverai/browser-automation"]
+      "args": ["@popoverai/browser-automation"],
+      "env": {
+        "MODEL_API_KEY": "your-api-key"
+      }
     }
   }
 }
 ```
 
-With Playwright federation (adds low-level browser control tools):
+With a custom model and Playwright federation:
 ```json
 {
   "mcpServers": {
     "browser": {
       "command": "npx",
-      "args": ["@popoverai/browser-automation", "--enable-playwright"]
+      "args": ["@popoverai/browser-automation", "--enable-playwright", "--modelName", "anthropic/claude-haiku-4-5"],
+      "env": {
+        "MODEL_API_KEY": "sk-ant-..."
+      }
     }
   }
 }
