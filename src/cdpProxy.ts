@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "net";
+import { Browserbase } from "@browserbasehq/sdk";
 import type { SessionManager } from "./sessionManager.js";
 import type { Config } from "../config.d.ts";
 
@@ -35,10 +36,18 @@ export class CdpProxy {
   private sessionManager: SessionManager;
   private config: Config;
   private port: number | null = null;
+  private bbClient: Browserbase | null = null;
 
   constructor(sessionManager: SessionManager, config: Config) {
     this.sessionManager = sessionManager;
     this.config = config;
+  }
+
+  private getBrowserbaseClient(): Browserbase {
+    if (!this.bbClient) {
+      this.bbClient = new Browserbase({ apiKey: this.config.browserbaseApiKey! });
+    }
+    return this.bbClient;
   }
 
   /**
@@ -110,16 +119,42 @@ export class CdpProxy {
         return;
       }
 
-      // Get the CDP WebSocket URL from Stagehand (works for both local and cloud sessions)
-      const cdpUrl = session.stagehand.connectURL();
-      if (!cdpUrl) {
-        process.stderr.write(`[CdpProxy] No CDP URL available from session\n`);
-        clientWs.close(4001, "No CDP URL available from session.");
-        return;
+      const isCloud = !!session.stagehand.browserbaseSessionId;
+      let cdpUrl: string;
+
+      if (isCloud) {
+        // Cloud: use debug wsUrl for secondary CDP connection (connectUrl doesn't support concurrent connections)
+        const browserbaseSessionId = session.stagehand.browserbaseSessionId!;
+        process.stderr.write(
+          `[CdpProxy] Cloud session detected (${browserbaseSessionId}), fetching debug wsUrl...\n`
+        );
+        try {
+          const bb = this.getBrowserbaseClient();
+          const debugInfo = await bb.sessions.debug(browserbaseSessionId);
+          cdpUrl = debugInfo.wsUrl;
+          if (!cdpUrl) {
+            throw new Error("sessions.debug() returned empty wsUrl");
+          }
+          process.stderr.write(`[CdpProxy] Got debug wsUrl for cloud session\n`);
+        } catch (debugError) {
+          const msg = debugError instanceof Error ? debugError.message : String(debugError);
+          process.stderr.write(`[CdpProxy] Failed to get debug wsUrl: ${msg}\n`);
+          clientWs.close(4002, `Failed to get Browserbase debug URL: ${msg}`);
+          return;
+        }
+      } else {
+        // Local: use Stagehand's connectURL directly (Chrome supports concurrent CDP connections)
+        cdpUrl = session.stagehand.connectURL();
+        if (!cdpUrl) {
+          process.stderr.write(`[CdpProxy] No CDP URL available from session\n`);
+          clientWs.close(4001, "No CDP URL available from session.");
+          return;
+        }
       }
 
-      const isCloud = !!session.stagehand.browserbaseSessionId;
-      process.stderr.write(`[CdpProxy] Connecting to ${isCloud ? "Browserbase" : "local"} CDP: ${cdpUrl}\n`);
+      process.stderr.write(
+        `[CdpProxy] Connecting to ${isCloud ? "Browserbase debug" : "local"} CDP: ${cdpUrl.substring(0, 60)}...\n`
+      );
 
       // Connect to Browserbase CDP
       upstreamWs = new WebSocket(cdpUrl);
