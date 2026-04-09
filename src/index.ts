@@ -13,6 +13,7 @@ import { TOOLS } from "./tools/index.js";
 import { RESOURCE_TEMPLATES } from "./mcp/resources.js";
 import { CdpProxy } from "./cdpProxy.js";
 import { PlaywrightFederation } from "./playwrightFederation.js";
+import { disconnectAgentBrowser } from "./tools/agentBrowser.js";
 
 import {
   ListResourcesRequestSchema,
@@ -283,6 +284,9 @@ export default async function ({ config }: { config: z.infer<typeof configSchema
     if (cdpProxy) {
       cdpProxy.stop();
     }
+
+    // Disconnect agent-browser daemon
+    disconnectAgentBrowser();
 
     // Close all browser sessions
     await context.getSessionManager().closeAllSessions();

@@ -29,6 +29,16 @@ This is a fork of [@browserbasehq/mcp-server-browserbase](https://github.com/bro
 | `stagehand_screenshot` | Capture a screenshot |
 | `stagehand_get_url` | Get current page URL |
 | `stagehand_agent` | Autonomous multi-step execution (hybrid mode) |
+| `agent_browser_help` | Show help for agent-browser, a low-level CLI for precise browser control |
+| `agent_browser_run` | Run a low-level browser command (snapshot, click by ref, network, JS eval, etc.) |
+
+### Stagehand vs agent-browser
+
+Stagehand tools (`stagehand_act`, `stagehand_extract`, etc.) provide high-level, AI-powered browser control — good for acceptance testing and exploratory flows where natural language actions are convenient.
+
+agent-browser tools (`agent_browser_run`) provide low-level, deterministic control — good for precise element interactions by ref, DOM inspection, network debugging, JS evaluation, and situations where Stagehand's abstractions are too coarse. agent-browser shares the same browser session as Stagehand via CDP, so you can freely mix both.
+
+agent-browser is resolved via `npx` automatically — no global install required.
 
 ## Environment Variables
 
