@@ -107,7 +107,8 @@ program
     "--scenario <scenario>",
     "JSON scenario string or file path (mutually exclusive with positional url/assertions)"
   )
-  .action(async (url: string | undefined, assertions: string[], options: { scenario?: string }, cmd: { optsWithGlobals: () => { cloud?: boolean; modelName?: string; modelApiKey?: string } }) => {
+  .option("--usage", "Include token usage data in output")
+  .action(async (url: string | undefined, assertions: string[], options: { scenario?: string; usage?: boolean }, cmd: { optsWithGlobals: () => { cloud?: boolean; modelName?: string; modelApiKey?: string } }) => {
     const globalOpts = cmd.optsWithGlobals();
     if (options.scenario && (url || assertions.length)) {
       console.error("Error: --scenario cannot be used with positional url/assertions arguments");
@@ -174,7 +175,13 @@ program
 
       const output = result.output as { results: { status: string; notes: string; key?: string }[] } | undefined;
       if (output?.results) {
-        console.log(JSON.stringify({ results: output.results }));
+        const payload: { results: typeof output.results; usage?: Record<string, unknown> } = {
+          results: output.results,
+        };
+        if (options.usage) {
+          payload.usage = { model: modelName, ...(result.usage ?? {}) };
+        }
+        console.log(JSON.stringify(payload));
         const allPassed = output.results.every(r => r.status === "passed");
         process.exit(allPassed ? 0 : 1);
       } else {
