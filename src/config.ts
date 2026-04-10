@@ -1,4 +1,5 @@
 import type { Config } from "../config.d.ts";
+import { parseVariablesEnv } from "./variables.js";
 
 export type ToolCapability = "core" | string;
 
@@ -34,6 +35,7 @@ const defaultConfig: Config = {
     browserHeight: 768,
   },
   modelName: "google/gemini-3-flash-preview", // Default Model
+  variables: parseVariablesEnv(process.env.STAGEHAND_VARIABLES),
 };
 
 // Resolve final configuration by merging defaults, file config, and CLI options

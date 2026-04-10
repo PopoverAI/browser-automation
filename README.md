@@ -49,7 +49,48 @@ BROWSERBASE_API_KEY=...          # only needed for cloud: true
 BROWSERBASE_PROJECT_ID=...       # only needed for cloud: true
 NGROK_AUTHTOKEN=...              # only needed for cloud: true with localhost URLs
 VERCEL_AUTOMATION_BYPASS_SECRET=... # optional, for Vercel preview deployments
+STAGEHAND_VARIABLES=...          # optional, JSON map of variables auto-injected into stagehand_act, stagehand_agent, and stagehand_scenario (see Variables below)
 ```
+
+## Variables
+
+Stagehand supports templated variables in instructions so sensitive values (passwords, API keys, personal info) can be kept out of the text sent to the LLM. Reference them in any `stagehand_act`, `stagehand_agent`, or `stagehand_scenario` instruction as `%varName%` and Stagehand substitutes the value client-side just before the action runs.
+
+There are three ways to supply variables. Later sources override earlier ones on key conflict:
+
+1. **Global** — set the `STAGEHAND_VARIABLES` env var to a JSON object. Applies to every tool call and every CLI scenario run.
+2. **Scenario-scoped** — add a top-level `variables` field to a scenario object (MCP tool or CLI `--scenario` JSON). Applies to the agent call that runs the scenario.
+3. **Per-call** — pass `variables` as a parameter to `stagehand_act` or `stagehand_agent`.
+
+All three use the same shape:
+
+```json
+{
+  "password": { "value": "hunter2" },
+  "username": { "value": "user@example.com", "description": "login email" }
+}
+```
+
+`description` is optional. For agent calls it helps the model understand when to use each variable; for act calls it's ignored.
+
+Example MCP client config with a global:
+
+```json
+"env": {
+  "MODEL_API_KEY": "sk-ant-...",
+  "STAGEHAND_VARIABLES": "{\"password\":{\"value\":\"hunter2\",\"description\":\"login password\"}}"
+}
+```
+
+Example CLI scenario with a scenario-scoped variable:
+
+```bash
+browser-automation test --scenario '{"baseUrl":"https://example.com/login","variables":{"password":{"value":"hunter2"}},"steps":[{"step":"act","description":"Type %password% into the password field"},{"step":"assert","description":"Login succeeds"}]}'
+```
+
+### Caveat: screenshot leakage in hybrid mode
+
+Stagehand guarantees that raw values never appear in the instructions sent to the LLM. But the agent tool runs in hybrid mode, which takes screenshots between steps, and any value typed into a non-masked input (search box, plain text field) will be *rendered* on the page and captured by the next screenshot. A vision model looking at that screenshot can read the value and echo it in its reasoning or final message. Password fields are safe because browsers mask them to dots; everything else is not. Variables protect the instruction channel, not the visible page.
 
 ## Localhost Tunneling (Cloud Mode)
 
@@ -90,6 +131,8 @@ browser-automation test --modelName "anthropic/claude-haiku-4-5" \
 # Multi-step scenario (arrange/act/assert)
 browser-automation test --scenario '{"baseUrl":"https://example.com","steps":[{"step":"act","description":"Click the More information link"},{"step":"assert","description":"Page navigated away from example.com"}]}'
 ```
+
+Scenarios can also reference templated variables (see [Variables](#variables)) — either from the `STAGEHAND_VARIABLES` env var or from a top-level `variables` field on the scenario object itself.
 
 Returns JSON results (one per assertion):
 ```json

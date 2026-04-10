@@ -1,4 +1,5 @@
 import type { AvailableModelSchema } from "@browserbasehq/stagehand";
+import type { Variables } from "./src/variables.js";
 
 export type Config = {
   /**
@@ -120,4 +121,12 @@ export type Config = {
    * @default false
    */
   cloud?: boolean;
+  /**
+   * Global Stagehand variables, auto-injected into every stagehand_act,
+   * stagehand_agent, and stagehand_scenario call. Populated from the
+   * STAGEHAND_VARIABLES env var (JSON-encoded). LLMs reference values as
+   * %varName% in instructions; raw values are substituted at runtime and
+   * never sent to the LLM.
+   */
+  variables?: Variables;
 };

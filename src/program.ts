@@ -10,6 +10,7 @@ import { startHttpTransport, startStdioTransport } from "./transport.js";
 import { resolveConfig } from "./config.js";
 import { Stagehand } from "@browserbasehq/stagehand";
 import { type Scenario, parseScenario, buildInstruction, buildOutputSchema, getAssertCount } from "./scenario.js";
+import { mergeVariables, parseVariablesEnv } from "./variables.js";
 
 let __filename: string;
 let __dirname: string;
@@ -161,10 +162,14 @@ program
         model: modelName,
       });
 
+      const globalVariables = parseVariablesEnv(process.env.STAGEHAND_VARIABLES);
+      const mergedVariables = mergeVariables(globalVariables, scenario.variables);
+
       const result = await agent.execute({
         instruction,
         maxSteps: 30,
         output: outputSchema,
+        variables: mergedVariables,
       });
 
       const output = result.output as { results: { status: string; notes: string; key?: string }[] } | undefined;

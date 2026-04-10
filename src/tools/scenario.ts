@@ -3,6 +3,7 @@ import type { Tool, ToolSchema, ToolResult } from "./tool.js";
 import type { Context } from "../context.js";
 import type { ToolActionResult } from "../types/types.js";
 import { validateScenario, buildInstruction, buildOutputSchema } from "../scenario.js";
+import { VariablesSchema, mergeVariables } from "../variables.js";
 
 const StepSchema = z.object({
   step: z.enum(["arrange", "act", "assert"]).describe(
@@ -17,6 +18,12 @@ const ScenarioInputSchema = z.object({
   scenario: z.object({
     baseUrl: z.string().describe("The base URL for the scenario. Relative step URLs are resolved against this."),
     steps: z.array(StepSchema).describe("Ordered list of arrange, act, and assert steps"),
+    variables: VariablesSchema.optional().describe(
+      `Scenario-scoped variables for sensitive data. Reference them in step descriptions
+        as %varName%. Shape: {varName: {value: "...", description?: "..."}}. Globally-configured
+        variables (from STAGEHAND_VARIABLES) are automatically merged; scenario variables
+        override globals on key conflict.`,
+    ),
   }).describe("A multi-step test scenario with arrange/act/assert steps"),
   maxSteps: z.number().optional().describe(
     `Maximum number of agent steps. Default: 30.`,
@@ -50,10 +57,12 @@ async function handleScenario(
         model: context.config.modelName,
       });
 
+      const merged = mergeVariables(context.config.variables, params.scenario.variables);
       const result = await agent.execute({
         instruction,
         maxSteps: params.maxSteps ?? 30,
         output: outputSchema,
+        variables: merged,
       });
 
       return {

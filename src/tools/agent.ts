@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Tool, ToolSchema, ToolResult } from "./tool.js";
 import type { Context } from "../context.js";
 import type { ToolActionResult } from "../types/types.js";
+import { VariablesSchema, mergeVariables } from "../variables.js";
 
 /**
  * Stagehand Agent
@@ -17,10 +18,17 @@ const AgentInputSchema = z.object({
     `The task prompt describing what you want the sub-agent to accomplish.
     Be clear and specific about the goal. For example:
     'Go to Hacker News and find the most controversial post from today, then summarize the top 3 comments'.
-    The agent will autonomously navigate and interact with web pages to complete this task.`,
+    The agent will autonomously navigate and interact with web pages to complete this task.
+    Reference sensitive values as %varName% to have them substituted at runtime from variables.`,
   ),
   maxSteps: z.number().optional().describe(
     `Maximum number of steps the agent can take. Default: 20.`,
+  ),
+  variables: VariablesSchema.optional().describe(
+    `Variables for sensitive data. Reference them in the prompt as %varName%.
+      Shape: {varName: {value: "...", description?: "..."}}. The description helps the
+      agent understand when to use each variable. Globally-configured variables (from
+      STAGEHAND_VARIABLES) are automatically merged; per-call variables override globals.`,
   ),
 });
 
@@ -48,9 +56,11 @@ async function handleAgent(
       });
 
       // Execute the task
+      const merged = mergeVariables(context.config.variables, params.variables);
       const result = await agent.execute({
         instruction: params.prompt,
         maxSteps: params.maxSteps ?? 20,
+        variables: merged,
       });
 
       // Build response with result details

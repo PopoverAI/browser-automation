@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { z } from "zod";
+import type { Variables } from "./variables.js";
 
 export interface Step {
   step: "arrange" | "act" | "assert";
@@ -12,6 +13,7 @@ export interface Step {
 export interface Scenario {
   baseUrl: string;
   steps: Step[];
+  variables?: Variables;
 }
 
 const VALID_STEP_TYPES = new Set(["arrange", "act", "assert"]);
