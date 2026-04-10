@@ -150,9 +150,26 @@ Exit codes: 0 if all assertions pass, 1 otherwise.
 | Option | Description |
 |--------|-------------|
 | `--scenario <json\|file>` | JSON scenario string or file path (mutually exclusive with positional url/assertions) |
+| `--usage` | Include token usage data in the JSON output |
 | `--modelName <model>` | Model to use (default: `google/gemini-3-flash-preview`) |
 | `--modelApiKey <key>` | API key for the model provider |
 | `--cloud` | Use Browserbase cloud browser instead of local Playwright |
+
+When `--usage` is passed, a `usage` field is added to the JSON output alongside `results`:
+
+```json
+{
+  "results": [{"status": "passed", "notes": "The page title is 'Example Domain'"}],
+  "usage": {
+    "model": "google/gemini-3-flash-preview",
+    "input_tokens": 16223,
+    "output_tokens": 47,
+    "reasoning_tokens": 474,
+    "cached_input_tokens": 7990,
+    "inference_time_ms": 10336
+  }
+}
+```
 
 ## MCP Usage
 
