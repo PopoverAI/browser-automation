@@ -69,7 +69,7 @@ async function handleScenario(
         content: [
           {
             type: "text",
-            text: JSON.stringify(result.output, null, 2),
+            text: JSON.stringify(result.output, null, 2) ?? "No output returned from scenario agent.",
           },
         ],
       };
