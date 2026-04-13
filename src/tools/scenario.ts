@@ -65,11 +65,26 @@ async function handleScenario(
         variables: merged,
       });
 
+      if (result.output != null) {
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(result.output, null, 2) },
+          ],
+        };
+      }
+
+      // Agent finished without structured output — return diagnostics
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(result.output, null, 2) ?? "No output returned from scenario agent.",
+            text: JSON.stringify({
+              error: "Scenario agent did not return structured output.",
+              completed: result.completed,
+              success: result.success,
+              message: result.message,
+              actionsCount: result.actions?.length ?? 0,
+            }, null, 2),
           },
         ],
       };
