@@ -18,6 +18,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./scenario": {
+      "types": "./dist/scenario-entry.d.ts",
+      "import": "./dist/scenario-entry.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
