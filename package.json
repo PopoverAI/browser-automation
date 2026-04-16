@@ -12,8 +12,14 @@
     "url": "https://github.com/PopoverAI/browser-automation"
   },
   "type": "module",
-  "main": "./cli.js",
   "module": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
     "browser-automation": "cli.js"
   },
@@ -22,8 +28,6 @@
     "README.md",
     "dist",
     "cli.js",
-    "index.d.ts",
-    "index.js",
     "config.d.ts"
   ],
   "scripts": {

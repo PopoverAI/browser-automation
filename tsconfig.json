@@ -10,6 +10,7 @@
     "resolveJsonModule": true,
     "outDir": "dist",
     "rootDir": "src",
+    "declaration": true,
     "noErrorTruncation": false
   },
   "include": ["src/**/*.ts"],
