@@ -1,0 +1,12 @@
+# Patterns for files to copy from the main checkout into new worktrees.
+# Uses gitignore syntax. Only gitignored files matching patterns are copied,
+# so tracked files (e.g. .env.example) are safe to leave covered by broad globs.
+
+# Environment files — API keys for Browserbase, Gemini/Google, Vercel bypass,
+# ngrok tokens, Stagehand variables, etc.
+.env
+.env.local
+.env.*.local
+
+# Local Claude Code settings — per-project tool permissions and prefs.
+.claude/settings.local.json

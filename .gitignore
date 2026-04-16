@@ -25,3 +25,6 @@ npm-debug.log*
 
 # Smithery
 .smithery/
+
+# Claude Code worktrees
+.claude/worktrees/
