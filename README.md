@@ -29,6 +29,7 @@ This is a fork of [@browserbasehq/mcp-server-browserbase](https://github.com/bro
 | `stagehand_screenshot` | Capture a screenshot |
 | `stagehand_get_url` | Get current page URL |
 | `stagehand_agent` | Autonomous multi-step execution (hybrid mode) |
+| `stagehand_run_script` | Load a committed Stagehand script file (default export from `defineScript`) and run it against the current session. See [Scripts](#scripts). |
 | `agent_browser_help` | Show help for agent-browser, a low-level CLI for precise browser control |
 | `agent_browser_run` | Run a low-level browser command (snapshot, click by ref, network, JS eval, etc.) |
 
@@ -91,6 +92,83 @@ browser-automation test --scenario '{"baseUrl":"https://example.com/login","vari
 ### Caveat: screenshot leakage in hybrid mode
 
 Stagehand guarantees that raw values never appear in the instructions sent to the LLM. But the agent tool runs in hybrid mode, which takes screenshots between steps, and any value typed into a non-masked input (search box, plain text field) will be *rendered* on the page and captured by the next screenshot. A vision model looking at that screenshot can read the value and echo it in its reasoning or final message. Password fields are safe because browsers mask them to dots; everything else is not. Variables protect the instruction channel, not the visible page.
+
+## Scripts
+
+Scenarios (above) and the Stagehand agent are great for exploration but expensive to re-run: the agent re-plans every step and takes screenshots between actions, which is exactly what you want when figuring out a flow for the first time and exactly what you don't want on every CI build.
+
+Scripts are the cheap, committed counterpart. A script is a TypeScript file whose default export is a function produced by `defineScript(...)`. It calls Stagehand primitives (`page.act`, `page.extract`, `page.observe`) directly — one LLM call per step, no planning, no screenshot recaps — while still surviving small UI drift because the instructions stay in natural language (`"click the login button"` keeps working if the button moves or gets restyled).
+
+The intended workflow:
+
+1. Walk through the test case once with the agent / primitives to figure out what instructions work.
+2. Commit a script that replays those same instructions.
+3. Run it as many times as you like — in CI, from `npm run e2e`, from your test runner — at one-LLM-call-per-step cost.
+
+### Authoring a script
+
+```ts
+// tests/signup.stagehand.ts
+import { defineScript } from "@popoverai/browser-automation/script";
+import { z } from "zod";
+import assert from "node:assert/strict";
+
+export default defineScript(async ({ page, ctx }) => {
+  await page.goto(ctx.baseUrl ?? "https://example.com/signup");
+  await page.act(`type ${ctx.username ?? "test@example.com"} into the email field`);
+  await page.act(`type ${ctx.password ?? "hunter2"} into the password field`);
+  await page.act("click the sign up button");
+
+  const { heading } = await page.extract(
+    "the main heading on the landing page",
+    z.object({ heading: z.string() }),
+  );
+  assert.match(heading, /welcome/i);
+});
+```
+
+The default `ctx` shape (`BaseCtx`) accepts `baseUrl`, `username`, `password`, and any other string field without extra declaration. If you need non-string fields, pass your own generic:
+
+```ts
+interface Ctx { productId: string; quantity: number }
+export default defineScript<Ctx>(async ({ page, ctx }) => { ... });
+```
+
+Scripts throw to signal failure and return to signal success. They do **not** construct or close a Stagehand session — the caller owns lifecycle, which lets a single session be reused across many scripts.
+
+### Running a script
+
+Via the MCP tool (uses the current session):
+
+```
+stagehand_run_script({ path: "tests/signup.stagehand.ts", ctx: { baseUrl: "https://staging.example.com" } })
+```
+
+Returns `{"status": "passed", "durationMs": <n>}` or `{"status": "failed", "durationMs": <n>, "error": "...", "stack": "..."}`.
+
+From your own runner (CI, `npm run e2e`, a test framework):
+
+```ts
+import { Stagehand } from "@browserbasehq/stagehand";
+import runSignup from "./tests/signup.stagehand.ts";
+
+const stagehand = new Stagehand({ env: "LOCAL", model: "google/gemini-3-flash-preview" });
+await stagehand.init();
+try {
+  const page = stagehand.context.pages()[0];
+  await runSignup({ stagehand, page, ctx: { baseUrl: process.env.APP_URL } });
+} finally {
+  await stagehand.close();
+}
+```
+
+Multiple scripts can share one session — `init` once, call each script's function in turn, `close` once.
+
+### What not to write in a script
+
+- **Don't use `stagehand.agent()`** — that reintroduces the per-run planning cost scripts exist to avoid. Call the primitives directly.
+- **Don't lower to Playwright selectors** (`page.locator("button[aria-label='Sign in']").click()`). The natural-language `act` phrasing is what buys you resilience; CSS/ARIA selectors break on the next deploy.
+- **Don't hard-code credentials.** Route them through `ctx` so the caller controls them.
 
 ## Localhost Tunneling (Cloud Mode)
 

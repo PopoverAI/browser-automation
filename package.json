@@ -22,6 +22,10 @@
       "types": "./dist/scenario-entry.d.ts",
       "import": "./dist/scenario-entry.js"
     },
+    "./script": {
+      "types": "./dist/script.d.ts",
+      "import": "./dist/script.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -65,6 +69,7 @@
     "commander": "^14.0.0",
     "dotenv": "^16.4.6",
     "sharp": "^0.33.0",
+    "tsx": "^4.20.3",
     "ws": "^8.18.0",
     "zod": "^3.25.67"
   },
@@ -83,7 +88,6 @@
     "mcpvals": "^0.4.0",
     "prettier": "^3.6.1",
     "shx": "^0.3.4",
-    "tsx": "^4.20.3",
     "typescript": "^5.6.2",
     "typescript-eslint": "^8.35.0"
   },
