@@ -138,17 +138,28 @@ export default defineScript<Ctx>(async ({ stagehand, page, ctx }) => { ... });
 
 Scripts throw to signal failure and return to signal success. They do **not** construct or close a Stagehand session — the caller owns lifecycle, which lets a single session be reused across many scripts.
 
-### Running a script
+### Running a script via the MCP tool
 
-Via the MCP tool (uses the current session):
+Pass either a committed file `path` or inline `source` (exactly one):
 
 ```
 stagehand_run_script({ path: "tests/signup.stagehand.ts", ctx: { baseUrl: "https://staging.example.com" } })
 ```
 
+```
+stagehand_run_script({ source: "import { defineScript } from '@popoverai/browser-automation/script';\nexport default defineScript(async ({ page, ctx }) => { /* ... */ });", ctx: { ... } })
+```
+
 Returns `{"status": "passed", "durationMs": <n>}` or `{"status": "failed", "durationMs": <n>, "error": "...", "stack": "..."}`.
 
-From your own runner (CI, `npm run e2e`, a test framework):
+Imports behave differently between the two modes:
+
+- **`path` mode** — bare imports (`defineScript`, `zod`, etc.) resolve from the script's own `node_modules` tree. The script's project must have the needed deps installed.
+- **`source` mode** — bare imports resolve against the MCP's own `node_modules`. No install required in the caller's workspace; the script can be run from anywhere, including callers that have no filesystem (inline string only).
+
+### Running a script from your own runner
+
+For CI, `npm run e2e`, or a test framework:
 
 ```ts
 import { Stagehand } from "@browserbasehq/stagehand";
@@ -164,7 +175,7 @@ try {
 }
 ```
 
-Multiple scripts can share one session — `init` once, call each script's function in turn, `close` once.
+Multiple scripts can share one session — `init` once, call each script's function in turn, `close` once. This path doesn't go through `stagehand_run_script`, so imports resolve normally against your project's `node_modules`.
 
 ### What not to write in a script
 

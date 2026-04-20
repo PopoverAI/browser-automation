@@ -1,126 +1,138 @@
 // Smoke test for the script subpath + stagehand_run_script loader behavior.
 // Does NOT boot a browser — exercises the plumbing:
 //   1. defineScript is importable from the subpath and is runtime-identity
-//   2. tsx-based dynamic loading works for .ts (ESM and CJS-wrapped) and .js
-//   3. Edits to the script are picked up on re-run (cache miss via temp copy)
+//   2. path mode: sibling copy, edit-between-runs cache miss, stack rewrite
+//   3. source mode: inline string, bare imports resolve from MCP's deps,
+//      stack rewrite with the <inline source> sentinel
+//   4. Missing path surfaces a clean ENOENT-ish error
+//
+// Uses the real dist/scriptLoader.js — this tests the shipped code, not a
+// re-implementation.
 //
 // Run: node scripts/smoke-run-script.mjs
 import { pathToFileURL } from "url";
-import { resolve, extname } from "path";
-import { copyFileSync, mkdtempSync, unlinkSync, writeFileSync, rmSync } from "fs";
-import { randomBytes } from "crypto";
+import { resolve } from "path";
+import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-// 1. Subpath export resolves.
 const { defineScript } = await import("../dist/script.js");
+const { loadScriptModule, resolveScriptFn, rewriteStack } = await import(
+  "../dist/scriptLoader.js"
+);
+
+// 1. Subpath export + identity.
 if (typeof defineScript !== "function") {
   throw new Error("defineScript is not a function");
 }
-
-// 2. Identity semantics — defineScript returns the same function.
 const inner = async () => {};
 if (defineScript(inner) !== inner) {
   throw new Error("defineScript must be identity at runtime");
 }
 
-// Mirror the tool's loader: copy to a unique sibling path, tsImport it, delete.
-// This is the only reliable way to get a fresh module between runs (tsx
-// normalizes URLs before Node's ESM graph cache sees them, so neither
-// ?t= query strings nor fresh namespaces force a reload).
-const { tsImport } = await import("tsx/esm/api");
+const defineScriptUrl = pathToFileURL(resolve("dist/script.js")).href;
 
-async function loadScriptModule(absPath) {
-  const ext = extname(absPath);
-  const suffix = `.stagehand-smoke-${Date.now()}-${randomBytes(4).toString("hex")}.tmp${ext}`;
-  const tempPath = absPath + suffix;
-  copyFileSync(absPath, tempPath);
-  try {
-    return await tsImport(tempPath, { parentURL: import.meta.url });
-  } finally {
-    try {
-      unlinkSync(tempPath);
-    } catch {
-      // Best-effort cleanup; a leftover temp file shouldn't fail the test.
-    }
-  }
-}
-
-function resolveScriptFn(mod) {
-  const direct = mod.default;
-  if (typeof direct === "function") return direct;
-  if (direct && typeof direct === "object" && typeof direct.default === "function") {
-    return direct.default;
-  }
-  return undefined;
-}
-
-async function exerciseFixture(label, { ext, withTypeModule }) {
-  const dir = mkdtempSync(join(tmpdir(), `stagehand-smoke-${label}-`));
-  if (withTypeModule) {
-    writeFileSync(join(dir, "package.json"), '{"type":"module"}');
-  }
-  const scriptPath = join(dir, `fixture${ext}`);
-  const defineScriptUrl = pathToFileURL(resolve("dist/script.js")).href;
+// 2. path mode — sibling copy, edit-between-runs cache miss, stack rewrite.
+// Uses an absolute file:// URL for defineScript so we don't depend on the
+// tempdir having npm packages installed.
+{
+  const dir = mkdtempSync(join(tmpdir(), "smoke-path-"));
+  writeFileSync(join(dir, "package.json"), '{"type":"module"}');
+  const scriptPath = join(dir, "fixture.ts");
 
   const writeVersion = (marker) =>
     writeFileSync(
       scriptPath,
       `import { defineScript } from "${defineScriptUrl}";
 export default defineScript(async ({ ctx }) => {
-  if (ctx.shouldFail === "yes") throw new Error("deliberate failure ${marker}");
+  if (ctx.shouldFail === "yes") throw new Error("failure ${marker}");
 });
 `,
     );
 
   try {
     writeVersion("v1");
-    const mod1 = await loadScriptModule(scriptPath);
-    const fn1 = resolveScriptFn(mod1);
-    if (typeof fn1 !== "function") {
-      throw new Error(`[${label}] resolver returned non-function (keys: ${JSON.stringify(Object.keys(mod1))})`);
-    }
-
-    // Pass path
+    const r1 = await loadScriptModule({ mode: "path", absPath: scriptPath });
+    const fn1 = resolveScriptFn(r1.mod);
     await fn1({ stagehand: null, page: null, ctx: {} });
-
-    // Fail path with v1 marker
-    let err1;
-    try {
-      await fn1({ stagehand: null, page: null, ctx: { shouldFail: "yes" } });
-    } catch (e) {
-      err1 = e;
-    }
-    if (!err1) throw new Error(`[${label}] fail-path did not throw for v1`);
-    if (!/deliberate failure v1/.test(err1.message)) {
-      throw new Error(`[${label}] v1 error message wrong: ${err1.message}`);
+    let e1;
+    try { await fn1({ stagehand: null, page: null, ctx: { shouldFail: "yes" } }); }
+    catch (e) { e1 = e; }
+    if (!/failure v1/.test(e1?.message ?? "")) {
+      throw new Error(`[path] v1 failure path broken: ${e1?.message}`);
     }
 
-    // Edit the file, reload, confirm the new marker comes through — this is
-    // the cache-miss guarantee. Without the temp-copy approach this would
-    // return the v1 module from Node's ESM graph cache.
     writeVersion("v2");
-    const mod2 = await loadScriptModule(scriptPath);
-    const fn2 = resolveScriptFn(mod2);
-    let err2;
-    try {
-      await fn2({ stagehand: null, page: null, ctx: { shouldFail: "yes" } });
-    } catch (e) {
-      err2 = e;
+    const r2 = await loadScriptModule({ mode: "path", absPath: scriptPath });
+    const fn2 = resolveScriptFn(r2.mod);
+    let e2;
+    try { await fn2({ stagehand: null, page: null, ctx: { shouldFail: "yes" } }); }
+    catch (e) { e2 = e; }
+    if (!/failure v2/.test(e2?.message ?? "")) {
+      throw new Error(`[path] edit not picked up: got ${e2?.message}`);
     }
-    if (!err2) throw new Error(`[${label}] fail-path did not throw for v2`);
-    if (!/deliberate failure v2/.test(err2.message)) {
-      throw new Error(`[${label}] v2 edit not picked up (got: ${err2.message}) — cache miss failed`);
+
+    // Stack rewrite: e2.stack should show the original path, not the temp copy.
+    const rewritten = rewriteStack(e2.stack, r2.tempPath, { path: scriptPath });
+    if (rewritten?.includes(r2.tempPath)) {
+      throw new Error("[path] stack rewrite left temp path in output");
+    }
+    if (!rewritten?.includes(scriptPath)) {
+      throw new Error("[path] stack rewrite didn't insert original path");
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-await exerciseFixture("ts-esm", { ext: ".ts", withTypeModule: true });
-await exerciseFixture("ts-cjs-wrapped", { ext: ".ts", withTypeModule: false });
-// .js fixture locks in that the tool's loader (which unconditionally routes
-// through tsImport now, with no .ts-gating) still handles plain JavaScript.
-await exerciseFixture("js-esm", { ext: ".js", withTypeModule: true });
+// 3. source mode — inline string. Uses a BARE `zod` import to prove
+// resolution walks the MCP's own node_modules (the temp file lives inside
+// the MCP package). Plus sentinel-based stack rewrite.
+{
+  const source = `import { z } from "zod";
+const schema = z.object({ ok: z.boolean() });
+export default async ({ ctx }) => {
+  schema.parse({ ok: true });
+  if (ctx.shouldFail === "yes") throw new Error("source failure");
+};
+`;
 
-console.log("OK: defineScript identity + dynamic load (.ts ESM, .ts CJS-wrapped, .js) + edit-between-runs cache miss");
+  const r = await loadScriptModule({ mode: "source", source });
+  const fn = resolveScriptFn(r.mod);
+  await fn({ stagehand: null, page: null, ctx: {} });
+
+  let err;
+  try { await fn({ stagehand: null, page: null, ctx: { shouldFail: "yes" } }); }
+  catch (e) { err = e; }
+  if (!/source failure/.test(err?.message ?? "")) {
+    throw new Error(`[source] failure path broken: ${err?.message}`);
+  }
+
+  const rewritten = rewriteStack(err.stack, r.tempPath, {
+    sentinel: "<inline source>",
+  });
+  if (rewritten?.includes(r.tempPath)) {
+    throw new Error("[source] stack rewrite left temp path in output");
+  }
+}
+
+// 4. path mode, non-existent file — expect a clean error message.
+{
+  const bogus = join(tmpdir(), "definitely-does-not-exist-" + Date.now() + ".ts");
+  let err;
+  try {
+    await loadScriptModule({ mode: "path", absPath: bogus });
+  } catch (e) {
+    err = e;
+  }
+  if (!err) {
+    throw new Error("[enoent] expected load to throw for missing path");
+  }
+  if (!/ENOENT|no such file/i.test(err.message)) {
+    throw new Error(`[enoent] expected ENOENT-ish error, got: ${err.message}`);
+  }
+}
+
+console.log(
+  "OK: defineScript identity + path mode (edit-cache-miss + stack rewrite) + source mode (bare zod resolves + sentinel stack rewrite) + ENOENT",
+);

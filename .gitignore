@@ -31,3 +31,7 @@ npm-debug.log*
 
 # MCPB desktop-extension bundle output
 *.mcpb
+
+# stagehand_run_script source-mode temp files (normally cleaned up;
+# leftovers after hard crashes land here)
+.stagehand-tmp/
