@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { copyFileSync, unlinkSync } from "fs";
+import { randomBytes } from "crypto";
+import { extname, resolve as resolvePath, isAbsolute } from "path";
 import { pathToFileURL } from "url";
-import { resolve as resolvePath, isAbsolute } from "path";
 import type { Tool, ToolSchema, ToolResult } from "./tool.js";
 import type { Context } from "../context.js";
 import type { ToolActionResult } from "../types/types.js";
@@ -49,29 +51,6 @@ const runScriptSchema: ToolSchema<typeof RunScriptInputSchema> = {
   inputSchema: RunScriptInputSchema,
 };
 
-// tsx's ESM loader hook is registered lazily on first .ts import. Registering
-// it is a no-op on subsequent calls and keeps the MCP startup lean for
-// sessions that never run a script.
-let tsxRegistered = false;
-async function ensureTsxLoader(): Promise<void> {
-  if (tsxRegistered) return;
-  try {
-    const api = (await import("tsx/esm/api")) as {
-      register?: () => unknown;
-    };
-    if (typeof api.register === "function") {
-      api.register();
-    }
-    tsxRegistered = true;
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Failed to register tsx loader for TypeScript scripts: ${errorMsg}. ` +
-        `Ensure tsx is installed alongside @popoverai/browser-automation.`,
-    );
-  }
-}
-
 type ScriptFn = (args: {
   stagehand: unknown;
   page: unknown;
@@ -101,6 +80,58 @@ function resolveScriptFn(mod: ScriptModule): ScriptFn | undefined {
   return undefined;
 }
 
+/**
+ * Load the script via tsx's programmatic `tsImport` API.
+ *
+ * Node's ESM module graph is keyed on the resolved filesystem path and
+ * `tsx`'s loader normalizes URLs before caching, so query-string cache-
+ * busting (`?t=...`) and fresh-namespace registers don't force a re-read.
+ * The only reliable way to pick up edits between runs in the same MCP
+ * session is to import from a unique path.
+ *
+ * We copy the script to a sibling temp path with a unique suffix, import
+ * that copy, and clean it up afterwards. Placing the copy next to the
+ * original preserves relative-import resolution (not used in typical
+ * scripts today, but avoids a latent footgun) and keeps bare-specifier
+ * resolution (`@popoverai/browser-automation/script`, `zod`) pointing at
+ * the same `node_modules` tree the original would have hit.
+ *
+ * We return both the module and the temp path so the caller can rewrite
+ * temp-path mentions out of any stack trace the script throws — by the
+ * time the caller reads `error.stack`, the file has been deleted, and
+ * frames like `...stagehand-run-<ts>-<rand>.tmp.ts:12:5` would point at
+ * a path the user can't open.
+ *
+ * NB: `tsImport` handles its own ESM loader registration internally (it
+ * runs `module.register()` with a fresh namespace per call), so we don't
+ * need to call `register()` ourselves.
+ */
+async function loadScriptModule(
+  absPath: string,
+): Promise<{ mod: ScriptModule; tempPath: string }> {
+  const ext = extname(absPath);
+  const suffix = `.stagehand-run-${Date.now()}-${randomBytes(4).toString("hex")}.tmp${ext}`;
+  const tempPath = absPath + suffix;
+
+  copyFileSync(absPath, tempPath);
+  try {
+    const { tsImport } = await import("tsx/esm/api");
+    const mod = (await tsImport(tempPath, {
+      parentURL: import.meta.url,
+    })) as ScriptModule;
+    return { mod, tempPath };
+  } finally {
+    try {
+      unlinkSync(tempPath);
+    } catch {
+      // Best-effort cleanup. A leftover temp file is preferable to failing
+      // the run over a cleanup error. (A hard crash — SIGKILL, process
+      // exit mid-run — can also leave a `*.stagehand-run-*.tmp.*` file
+      // next to the original; safe to delete.)
+    }
+  }
+}
+
 async function handleRunScript(
   context: Context,
   params: RunScriptInput,
@@ -110,21 +141,12 @@ async function handleRunScript(
       ? params.path
       : resolvePath(process.cwd(), params.path);
 
-    const isTs = absPath.endsWith(".ts") || absPath.endsWith(".tsx")
-      || absPath.endsWith(".mts") || absPath.endsWith(".cts");
-
-    if (isTs) {
-      await ensureTsxLoader();
-    }
-
-    // Cache-bust so edits made between runs within a single MCP session are
-    // picked up. Without this query suffix Node's module cache would serve
-    // the stale version.
-    const fileUrl = `${pathToFileURL(absPath).href}?t=${Date.now()}`;
-
     let mod: ScriptModule;
+    let tempPath: string;
     try {
-      mod = (await import(fileUrl)) as ScriptModule;
+      const loaded = await loadScriptModule(absPath);
+      mod = loaded.mod;
+      tempPath = loaded.tempPath;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       throw new Error(
@@ -136,7 +158,7 @@ async function handleRunScript(
     if (!script) {
       throw new Error(
         `Script at ${params.path} must export a function as its default export. ` +
-          `Use \`export default defineScript(async ({ page, ctx }) => { ... });\`.`,
+          `Use \`export default defineScript(async ({ stagehand, page, ctx }) => { ... });\`.`,
       );
     }
 
@@ -163,7 +185,17 @@ async function handleRunScript(
     } catch (error) {
       const durationMs = Date.now() - start;
       const message = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
+      // The thrown stack references the temp copy that we've already
+      // unlinked. Rewrite temp-path mentions back to the original so the
+      // caller can actually open the file at the reported line. Node's
+      // stack formatter uses either filesystem paths or file:// URLs
+      // depending on how the module was loaded — rewrite both forms.
+      const rawStack = error instanceof Error ? error.stack : undefined;
+      const tempFileUrl = pathToFileURL(tempPath).href;
+      const absFileUrl = pathToFileURL(absPath).href;
+      const stack = rawStack
+        ?.split(tempFileUrl).join(absFileUrl)
+        .split(tempPath).join(absPath);
       return {
         content: [
           {
