@@ -29,6 +29,10 @@ import {
  * validate cycle happens in-process without spawning a fresh browser.
  */
 
+// NB: Cross-field validation (exactly one of `path` / `source`) lives in the
+// handler below, not here. `.refine()` on a ZodObject produces a ZodEffects,
+// and the MCP SDK only registers tools whose input schema is a raw ZodObject
+// — wrapping the schema silently drops the tool from `tools/list`.
 const RunScriptInputSchema = z.object({
   path: z.string().min(1).optional().describe(
     `Path to a .ts or .js file whose default export was produced by
@@ -53,10 +57,7 @@ const RunScriptInputSchema = z.object({
       fields without schema declaration. Scripts that declare a custom Ctx
       generic are responsible for their own runtime validation.`,
   ),
-}).refine(
-  (v) => Boolean(v.path) !== Boolean(v.source),
-  { message: "Exactly one of 'path' or 'source' must be provided" },
-);
+});
 
 type RunScriptInput = z.infer<typeof RunScriptInputSchema>;
 
@@ -79,6 +80,16 @@ async function handleRunScript(
   params: RunScriptInput,
 ): Promise<ToolResult> {
   const action = async (): Promise<ToolActionResult> => {
+    // XOR validation: the input schema can't enforce this (see note on
+    // RunScriptInputSchema), so do it here before any work.
+    const hasPath = Boolean(params.path);
+    const hasSource = Boolean(params.source);
+    if (hasPath === hasSource) {
+      throw new Error(
+        "Exactly one of 'path' or 'source' must be provided.",
+      );
+    }
+
     // Build the load inputs + a displayLocation used in error messages and
     // stack rewriting. For path mode we show the user's original path;
     // for source mode we use a sentinel (the real location is an
