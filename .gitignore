@@ -28,3 +28,6 @@ npm-debug.log*
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# MCPB desktop-extension bundle output
+*.mcpb
