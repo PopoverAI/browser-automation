@@ -1,0 +1,87 @@
+{
+  "manifest_version": "0.3",
+  "name": "browser-automation",
+  "display_name": "Browser Automation (Stagehand)",
+  "version": "0.1.0",
+  "description": "AI browser automation MCP — Stagehand-powered act/observe/extract, scenarios, and scripted flows.",
+  "author": {
+    "name": "Popover AI",
+    "url": "https://github.com/PopoverAI/browser-automation"
+  },
+  "homepage": "https://github.com/PopoverAI/browser-automation",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PopoverAI/browser-automation"
+  },
+  "license": "Apache-2.0",
+  "keywords": ["browser", "automation", "stagehand", "playwright", "browserbase", "mcp"],
+  "server": {
+    "type": "node",
+    "entry_point": "server.js",
+    "mcp_config": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@popoverai/browser-automation@latest",
+        "--modelName",
+        "${user_config.model_name}",
+        "--browserWidth",
+        "${user_config.browser_width}",
+        "--browserHeight",
+        "${user_config.browser_height}"
+      ],
+      "env": {
+        "MODEL_API_KEY": "${user_config.model_api_key}",
+        "BROWSERBASE_API_KEY": "${user_config.browserbase_api_key}",
+        "BROWSERBASE_PROJECT_ID": "${user_config.browserbase_project_id}"
+      }
+    }
+  },
+  "user_config": {
+    "model_api_key": {
+      "type": "string",
+      "title": "Model API key",
+      "description": "API key for the LLM that Stagehand calls (Gemini by default; also supports OpenAI, Anthropic, etc.). Required for any agentic tool call.",
+      "required": true,
+      "sensitive": true
+    },
+    "model_name": {
+      "type": "string",
+      "title": "Model name",
+      "description": "LiteLLM-format model ID, e.g. google/gemini-3-flash-preview, openai/gpt-4o, anthropic/claude-haiku-4-5.",
+      "required": false,
+      "default": "google/gemini-3-flash-preview"
+    },
+    "browserbase_api_key": {
+      "type": "string",
+      "title": "Browserbase API key",
+      "description": "Only needed when creating sessions with cloud=true. Pass cloud=true to stagehand_session_create to use Browserbase instead of local Playwright.",
+      "required": false,
+      "sensitive": true
+    },
+    "browserbase_project_id": {
+      "type": "string",
+      "title": "Browserbase project ID",
+      "description": "Project ID that pairs with the Browserbase API key.",
+      "required": false
+    },
+    "browser_width": {
+      "type": "number",
+      "title": "Browser width",
+      "description": "Default viewport width in pixels.",
+      "required": false,
+      "default": 1024,
+      "min": 320,
+      "max": 3840
+    },
+    "browser_height": {
+      "type": "number",
+      "title": "Browser height",
+      "description": "Default viewport height in pixels.",
+      "required": false,
+      "default": 768,
+      "min": 240,
+      "max": 2160
+    }
+  }
+}

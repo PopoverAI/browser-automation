@@ -1,0 +1,6 @@
+{
+  "name": "browser-automation-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCPB packaging for @popoverai/browser-automation. The real server is fetched via npx at runtime — see manifest.json."
+}
