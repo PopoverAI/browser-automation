@@ -1,7 +1,7 @@
 // Smoke test for the script subpath + stagehand_run_script loader behavior.
 // Does NOT boot a browser — exercises the plumbing:
 //   1. defineScript is importable from the subpath and is runtime-identity
-//   2. tsx-based dynamic .ts loading works for both ESM and CJS-wrapped shapes
+//   2. tsx-based dynamic loading works for .ts (ESM and CJS-wrapped) and .js
 //   3. Edits to the script are picked up on re-run (cache miss via temp copy)
 //
 // Run: node scripts/smoke-run-script.mjs
@@ -55,12 +55,12 @@ function resolveScriptFn(mod) {
   return undefined;
 }
 
-async function exerciseFixture(label, withTypeModule) {
+async function exerciseFixture(label, { ext, withTypeModule }) {
   const dir = mkdtempSync(join(tmpdir(), `stagehand-smoke-${label}-`));
   if (withTypeModule) {
     writeFileSync(join(dir, "package.json"), '{"type":"module"}');
   }
-  const scriptPath = join(dir, "fixture.ts");
+  const scriptPath = join(dir, `fixture${ext}`);
   const defineScriptUrl = pathToFileURL(resolve("dist/script.js")).href;
 
   const writeVersion = (marker) =>
@@ -117,7 +117,10 @@ export default defineScript(async ({ ctx }) => {
   }
 }
 
-await exerciseFixture("esm", true);
-await exerciseFixture("cjs-wrapped", false);
+await exerciseFixture("ts-esm", { ext: ".ts", withTypeModule: true });
+await exerciseFixture("ts-cjs-wrapped", { ext: ".ts", withTypeModule: false });
+// .js fixture locks in that the tool's loader (which unconditionally routes
+// through tsImport now, with no .ts-gating) still handles plain JavaScript.
+await exerciseFixture("js-esm", { ext: ".js", withTypeModule: true });
 
-console.log("OK: defineScript identity + tsx .ts import + resolver + edit-between-runs cache miss");
+console.log("OK: defineScript identity + dynamic load (.ts ESM, .ts CJS-wrapped, .js) + edit-between-runs cache miss");

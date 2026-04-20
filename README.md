@@ -107,6 +107,8 @@ The intended workflow:
 
 ### Authoring a script
 
+In Stagehand v3, `act`, `extract`, and `observe` are methods on the Stagehand instance — not on the page. `page` is the raw Playwright Page, used for `goto` and other navigation-level calls.
+
 ```ts
 // tests/signup.stagehand.ts
 import { defineScript } from "@popoverai/browser-automation/script";
@@ -133,8 +135,6 @@ The default `ctx` shape (`BaseCtx`) accepts `baseUrl`, `username`, `password`, a
 interface Ctx { productId: string; quantity: number }
 export default defineScript<Ctx>(async ({ stagehand, page, ctx }) => { ... });
 ```
-
-In Stagehand v3, `act`, `extract`, and `observe` are methods on the Stagehand instance — not on the page. `page` is the raw Playwright Page, used for `goto` and other navigation-level calls.
 
 Scripts throw to signal failure and return to signal success. They do **not** construct or close a Stagehand session — the caller owns lifecycle, which lets a single session be reused across many scripts.
 

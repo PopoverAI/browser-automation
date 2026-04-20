@@ -2,6 +2,7 @@ import { z } from "zod";
 import { copyFileSync, unlinkSync } from "fs";
 import { randomBytes } from "crypto";
 import { extname, resolve as resolvePath, isAbsolute } from "path";
+import { pathToFileURL } from "url";
 import type { Tool, ToolSchema, ToolResult } from "./tool.js";
 import type { Context } from "../context.js";
 import type { ToolActionResult } from "../types/types.js";
@@ -94,8 +95,20 @@ function resolveScriptFn(mod: ScriptModule): ScriptFn | undefined {
  * scripts today, but avoids a latent footgun) and keeps bare-specifier
  * resolution (`@popoverai/browser-automation/script`, `zod`) pointing at
  * the same `node_modules` tree the original would have hit.
+ *
+ * We return both the module and the temp path so the caller can rewrite
+ * temp-path mentions out of any stack trace the script throws — by the
+ * time the caller reads `error.stack`, the file has been deleted, and
+ * frames like `...stagehand-run-<ts>-<rand>.tmp.ts:12:5` would point at
+ * a path the user can't open.
+ *
+ * NB: `tsImport` handles its own ESM loader registration internally (it
+ * runs `module.register()` with a fresh namespace per call), so we don't
+ * need to call `register()` ourselves.
  */
-async function loadScriptModule(absPath: string): Promise<ScriptModule> {
+async function loadScriptModule(
+  absPath: string,
+): Promise<{ mod: ScriptModule; tempPath: string }> {
   const ext = extname(absPath);
   const suffix = `.stagehand-run-${Date.now()}-${randomBytes(4).toString("hex")}.tmp${ext}`;
   const tempPath = absPath + suffix;
@@ -103,15 +116,18 @@ async function loadScriptModule(absPath: string): Promise<ScriptModule> {
   copyFileSync(absPath, tempPath);
   try {
     const { tsImport } = await import("tsx/esm/api");
-    return (await tsImport(tempPath, {
+    const mod = (await tsImport(tempPath, {
       parentURL: import.meta.url,
     })) as ScriptModule;
+    return { mod, tempPath };
   } finally {
     try {
       unlinkSync(tempPath);
     } catch {
       // Best-effort cleanup. A leftover temp file is preferable to failing
-      // the run over a cleanup error.
+      // the run over a cleanup error. (A hard crash — SIGKILL, process
+      // exit mid-run — can also leave a `*.stagehand-run-*.tmp.*` file
+      // next to the original; safe to delete.)
     }
   }
 }
@@ -126,8 +142,11 @@ async function handleRunScript(
       : resolvePath(process.cwd(), params.path);
 
     let mod: ScriptModule;
+    let tempPath: string;
     try {
-      mod = await loadScriptModule(absPath);
+      const loaded = await loadScriptModule(absPath);
+      mod = loaded.mod;
+      tempPath = loaded.tempPath;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       throw new Error(
@@ -166,7 +185,17 @@ async function handleRunScript(
     } catch (error) {
       const durationMs = Date.now() - start;
       const message = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
+      // The thrown stack references the temp copy that we've already
+      // unlinked. Rewrite temp-path mentions back to the original so the
+      // caller can actually open the file at the reported line. Node's
+      // stack formatter uses either filesystem paths or file:// URLs
+      // depending on how the module was loaded — rewrite both forms.
+      const rawStack = error instanceof Error ? error.stack : undefined;
+      const tempFileUrl = pathToFileURL(tempPath).href;
+      const absFileUrl = pathToFileURL(absPath).href;
+      const stack = rawStack
+        ?.split(tempFileUrl).join(absFileUrl)
+        .split(tempPath).join(absPath);
       return {
         content: [
           {
