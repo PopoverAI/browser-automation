@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { pathToFileURL } from "url";
-import { resolve as resolvePath, isAbsolute } from "path";
+import { copyFileSync, unlinkSync } from "fs";
+import { randomBytes } from "crypto";
+import { extname, resolve as resolvePath, isAbsolute } from "path";
 import type { Tool, ToolSchema, ToolResult } from "./tool.js";
 import type { Context } from "../context.js";
 import type { ToolActionResult } from "../types/types.js";
@@ -49,29 +50,6 @@ const runScriptSchema: ToolSchema<typeof RunScriptInputSchema> = {
   inputSchema: RunScriptInputSchema,
 };
 
-// tsx's ESM loader hook is registered lazily on first .ts import. Registering
-// it is a no-op on subsequent calls and keeps the MCP startup lean for
-// sessions that never run a script.
-let tsxRegistered = false;
-async function ensureTsxLoader(): Promise<void> {
-  if (tsxRegistered) return;
-  try {
-    const api = (await import("tsx/esm/api")) as {
-      register?: () => unknown;
-    };
-    if (typeof api.register === "function") {
-      api.register();
-    }
-    tsxRegistered = true;
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Failed to register tsx loader for TypeScript scripts: ${errorMsg}. ` +
-        `Ensure tsx is installed alongside @popoverai/browser-automation.`,
-    );
-  }
-}
-
 type ScriptFn = (args: {
   stagehand: unknown;
   page: unknown;
@@ -101,6 +79,43 @@ function resolveScriptFn(mod: ScriptModule): ScriptFn | undefined {
   return undefined;
 }
 
+/**
+ * Load the script via tsx's programmatic `tsImport` API.
+ *
+ * Node's ESM module graph is keyed on the resolved filesystem path and
+ * `tsx`'s loader normalizes URLs before caching, so query-string cache-
+ * busting (`?t=...`) and fresh-namespace registers don't force a re-read.
+ * The only reliable way to pick up edits between runs in the same MCP
+ * session is to import from a unique path.
+ *
+ * We copy the script to a sibling temp path with a unique suffix, import
+ * that copy, and clean it up afterwards. Placing the copy next to the
+ * original preserves relative-import resolution (not used in typical
+ * scripts today, but avoids a latent footgun) and keeps bare-specifier
+ * resolution (`@popoverai/browser-automation/script`, `zod`) pointing at
+ * the same `node_modules` tree the original would have hit.
+ */
+async function loadScriptModule(absPath: string): Promise<ScriptModule> {
+  const ext = extname(absPath);
+  const suffix = `.stagehand-run-${Date.now()}-${randomBytes(4).toString("hex")}.tmp${ext}`;
+  const tempPath = absPath + suffix;
+
+  copyFileSync(absPath, tempPath);
+  try {
+    const { tsImport } = await import("tsx/esm/api");
+    return (await tsImport(tempPath, {
+      parentURL: import.meta.url,
+    })) as ScriptModule;
+  } finally {
+    try {
+      unlinkSync(tempPath);
+    } catch {
+      // Best-effort cleanup. A leftover temp file is preferable to failing
+      // the run over a cleanup error.
+    }
+  }
+}
+
 async function handleRunScript(
   context: Context,
   params: RunScriptInput,
@@ -110,21 +125,9 @@ async function handleRunScript(
       ? params.path
       : resolvePath(process.cwd(), params.path);
 
-    const isTs = absPath.endsWith(".ts") || absPath.endsWith(".tsx")
-      || absPath.endsWith(".mts") || absPath.endsWith(".cts");
-
-    if (isTs) {
-      await ensureTsxLoader();
-    }
-
-    // Cache-bust so edits made between runs within a single MCP session are
-    // picked up. Without this query suffix Node's module cache would serve
-    // the stale version.
-    const fileUrl = `${pathToFileURL(absPath).href}?t=${Date.now()}`;
-
     let mod: ScriptModule;
     try {
-      mod = (await import(fileUrl)) as ScriptModule;
+      mod = await loadScriptModule(absPath);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       throw new Error(
@@ -136,7 +139,7 @@ async function handleRunScript(
     if (!script) {
       throw new Error(
         `Script at ${params.path} must export a function as its default export. ` +
-          `Use \`export default defineScript(async ({ page, ctx }) => { ... });\`.`,
+          `Use \`export default defineScript(async ({ stagehand, page, ctx }) => { ... });\`.`,
       );
     }
 

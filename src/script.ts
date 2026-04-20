@@ -9,7 +9,7 @@ import type { Stagehand, Page } from "@browserbasehq/stagehand";
  * Scripts that need non-string fields should pass their own generic:
  *
  *   interface Ctx { productId: string; quantity: number }
- *   export default defineScript<Ctx>(async ({ page, ctx }) => { ... });
+ *   export default defineScript<Ctx>(async ({ stagehand, page, ctx }) => { ... });
  */
 export interface BaseCtx {
   baseUrl?: string;
@@ -37,14 +37,18 @@ export type Script<Ctx extends object = BaseCtx> = (
  * caller) which passes `{ stagehand, page, ctx }`. Throw to signal failure;
  * return to signal success.
  *
+ * In Stagehand v3, `act`, `extract`, and `observe` are methods on the
+ * Stagehand instance — not on the page. `page` is the raw Playwright Page
+ * and is used for navigation (`page.goto`, `page.waitForLoadState`, etc.).
+ *
  * @example
  * import { defineScript } from "@popoverai/browser-automation/script";
  * import { z } from "zod";
  * import assert from "node:assert/strict";
  *
- * export default defineScript(async ({ page, ctx }) => {
+ * export default defineScript(async ({ stagehand, page, ctx }) => {
  *   await page.goto(ctx.baseUrl ?? "https://example.com");
- *   const { heading } = await page.extract(
+ *   const { heading } = await stagehand.extract(
  *     "the main heading",
  *     z.object({ heading: z.string() }),
  *   );

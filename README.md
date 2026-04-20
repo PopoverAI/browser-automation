@@ -97,7 +97,7 @@ Stagehand guarantees that raw values never appear in the instructions sent to th
 
 Scenarios (above) and the Stagehand agent are great for exploration but expensive to re-run: the agent re-plans every step and takes screenshots between actions, which is exactly what you want when figuring out a flow for the first time and exactly what you don't want on every CI build.
 
-Scripts are the cheap, committed counterpart. A script is a TypeScript file whose default export is a function produced by `defineScript(...)`. It calls Stagehand primitives (`page.act`, `page.extract`, `page.observe`) directly — one LLM call per step, no planning, no screenshot recaps — while still surviving small UI drift because the instructions stay in natural language (`"click the login button"` keeps working if the button moves or gets restyled).
+Scripts are the cheap, committed counterpart. A script is a TypeScript file whose default export is a function produced by `defineScript(...)`. It calls Stagehand primitives (`stagehand.act`, `stagehand.extract`, `stagehand.observe`) directly — one LLM call per step, no planning, no screenshot recaps — while still surviving small UI drift because the instructions stay in natural language (`"click the login button"` keeps working if the button moves or gets restyled).
 
 The intended workflow:
 
@@ -113,13 +113,13 @@ import { defineScript } from "@popoverai/browser-automation/script";
 import { z } from "zod";
 import assert from "node:assert/strict";
 
-export default defineScript(async ({ page, ctx }) => {
+export default defineScript(async ({ stagehand, page, ctx }) => {
   await page.goto(ctx.baseUrl ?? "https://example.com/signup");
-  await page.act(`type ${ctx.username ?? "test@example.com"} into the email field`);
-  await page.act(`type ${ctx.password ?? "hunter2"} into the password field`);
-  await page.act("click the sign up button");
+  await stagehand.act(`type ${ctx.username ?? "test@example.com"} into the email field`);
+  await stagehand.act(`type ${ctx.password ?? "hunter2"} into the password field`);
+  await stagehand.act("click the sign up button");
 
-  const { heading } = await page.extract(
+  const { heading } = await stagehand.extract(
     "the main heading on the landing page",
     z.object({ heading: z.string() }),
   );
@@ -131,8 +131,10 @@ The default `ctx` shape (`BaseCtx`) accepts `baseUrl`, `username`, `password`, a
 
 ```ts
 interface Ctx { productId: string; quantity: number }
-export default defineScript<Ctx>(async ({ page, ctx }) => { ... });
+export default defineScript<Ctx>(async ({ stagehand, page, ctx }) => { ... });
 ```
+
+In Stagehand v3, `act`, `extract`, and `observe` are methods on the Stagehand instance — not on the page. `page` is the raw Playwright Page, used for `goto` and other navigation-level calls.
 
 Scripts throw to signal failure and return to signal success. They do **not** construct or close a Stagehand session — the caller owns lifecycle, which lets a single session be reused across many scripts.
 
@@ -167,7 +169,7 @@ Multiple scripts can share one session — `init` once, call each script's funct
 ### What not to write in a script
 
 - **Don't use `stagehand.agent()`** — that reintroduces the per-run planning cost scripts exist to avoid. Call the primitives directly.
-- **Don't lower to Playwright selectors** (`page.locator("button[aria-label='Sign in']").click()`). The natural-language `act` phrasing is what buys you resilience; CSS/ARIA selectors break on the next deploy.
+- **Don't lower to Playwright selectors** (`page.locator("button[aria-label='Sign in']").click()`). The natural-language `stagehand.act` phrasing is what buys you resilience; CSS/ARIA selectors break on the next deploy.
 - **Don't hard-code credentials.** Route them through `ctx` so the caller controls them.
 
 ## Localhost Tunneling (Cloud Mode)
