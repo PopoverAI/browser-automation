@@ -31,6 +31,19 @@ export interface RunScenarioResult {
   allPassed: boolean;
   structured: boolean;
   usage?: Record<string, unknown>;
+  /**
+   * Identifier of the cloud-browser session that ran this scenario. Only
+   * present when `env: "BROWSERBASE"` — LOCAL runs have no session handle.
+   * Consumers use this to link to the vendor's replay surface (e.g.
+   * `https://www.browserbase.com/sessions/<id>`).
+   */
+  browserbaseSessionId?: string;
+  /**
+   * Vendor-provided direct URL for the session replay. When present, prefer
+   * this over constructing a URL from the id, since it already encodes the
+   * correct host for the deployment.
+   */
+  browserbaseSessionUrl?: string;
 }
 
 export async function runScenario(
@@ -62,8 +75,22 @@ export async function runScenario(
       notes,
     }));
 
+  let sessionFields: {
+    browserbaseSessionId?: string;
+    browserbaseSessionUrl?: string;
+  } = {};
+
   try {
     await stagehand.init();
+    sessionFields = {
+      ...(stagehand.browserbaseSessionID
+        ? { browserbaseSessionId: stagehand.browserbaseSessionID }
+        : {}),
+      ...(stagehand.browserbaseSessionURL
+        ? { browserbaseSessionUrl: stagehand.browserbaseSessionURL }
+        : {}),
+    };
+
     const page = stagehand.context.pages()[0];
     await page.goto(scenario.baseUrl);
 
@@ -91,6 +118,7 @@ export async function runScenario(
         results: output.results,
         allPassed,
         structured: true,
+        ...sessionFields,
       };
       if (includeUsage) {
         ret.usage = { model: modelName, ...(result.usage ?? {}) };
@@ -102,6 +130,7 @@ export async function runScenario(
       results: buildBlocked("No structured output returned from agent"),
       allPassed: false,
       structured: false,
+      ...sessionFields,
     };
   } catch (error) {
     const errorMsg = `Error: ${error instanceof Error ? error.message : String(error)}`;
@@ -109,6 +138,7 @@ export async function runScenario(
       results: buildBlocked(errorMsg),
       allPassed: false,
       structured: false,
+      ...sessionFields,
     };
   } finally {
     await stagehand.close();
