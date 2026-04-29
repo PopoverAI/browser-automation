@@ -30,6 +30,7 @@ This is a fork of [@browserbasehq/mcp-server-browserbase](https://github.com/bro
 | `stagehand_get_url` | Get current page URL |
 | `stagehand_agent` | Autonomous multi-step execution (hybrid mode) |
 | `stagehand_run_script` | Load a committed Stagehand script file (default export from `defineScript`) and run it against the current session. See [Scripts](#scripts). |
+| `stagehand_demo_video` | Record a narrated mp4 of a known-good Stagehand script. See [Demo videos](#demo-videos). |
 | `agent_browser_help` | Show help for agent-browser, a low-level CLI for precise browser control |
 | `agent_browser_run` | Run a low-level browser command (snapshot, click by ref, network, JS eval, etc.) |
 
@@ -51,6 +52,7 @@ BROWSERBASE_PROJECT_ID=...       # only needed for cloud: true
 NGROK_AUTHTOKEN=...              # only needed for cloud: true with localhost URLs
 VERCEL_AUTOMATION_BYPASS_SECRET=... # optional, for Vercel preview deployments
 STAGEHAND_VARIABLES=...          # optional, JSON map of variables auto-injected into stagehand_act, stagehand_agent, and stagehand_scenario (see Variables below)
+OPENAI_API_KEY=...               # only needed for stagehand_demo_video (TTS via gpt-4o-mini-tts)
 ```
 
 ## Variables
@@ -182,6 +184,58 @@ Multiple scripts can share one session — `init` once, call each script's funct
 - **Don't use `stagehand.agent()`** — that reintroduces the per-run planning cost scripts exist to avoid. Call the primitives directly.
 - **Don't lower to Playwright selectors** (`page.locator("button[aria-label='Sign in']").click()`). The natural-language `stagehand.act` phrasing is what buys you resilience; CSS/ARIA selectors break on the next deploy.
 - **Don't hard-code credentials.** Route them through `ctx` so the caller controls them.
+
+## Demo videos
+
+Generate a narrated mp4 walkthrough of a Stagehand flow. Each action runs through `stagehand.act` with a CDP screencast attached, narration is generated per-action via OpenAI TTS, and per-segment mp4s are concatenated into one final video.
+
+The flow is meant for *known-good* scripts: explore with the regular tools to figure out what works, then call this once with the locked-in sequence and the narration you want spoken over each step.
+
+### Via the MCP tool
+
+Make sure the active session is at the desired starting state (the tool reuses the active Stagehand session — it does not create one). Requires `OPENAI_API_KEY`.
+
+```
+stagehand_demo_video({
+  actions: [
+    { instruction: "go to the login page",          narrate: "navigating to the login page" },
+    { instruction: "type the email and password",   narrate: "entering credentials" },
+    { instruction: "click the sign in button",      narrate: "logging in" }
+  ]
+})
+→ { videoPath: "/tmp/browser-automation-demos/<id>/final.mp4", outputDir, segments: [...] }
+```
+
+Optional inputs: `outputDir`, `voice` (OpenAI voice id, default `"alloy"`), `keepIntermediates` (keep per-segment audio + mp4 + frame PNGs alongside `final.mp4`), `trailingDelay` (ms after each action before recording its end timestamp; default 1000ms), `maxWidth` / `maxHeight` (screencast capture size; default 1280x720).
+
+### Programmatic API
+
+For programmatic narration, loops over data, conditional steps, or bundling into your own runner:
+
+```ts
+import { Stagehand } from "@browserbasehq/stagehand";
+import { attachDemoRecorder } from "@popoverai/browser-automation/demo";
+
+const stagehand = new Stagehand({ /* ... */ });
+await stagehand.init();
+
+const demo = await attachDemoRecorder(stagehand);
+
+await demo.act("go to the login page", "navigating to the login page");
+await stagehand.extract({ /* ... */ });    // bare stagehand calls are ignored at render
+await demo.act("type credentials", "entering credentials");
+await demo.agent("complete the checkout", "the agent completes the checkout");
+
+const { videoPath } = await demo.render({ outputDir: "./out", voice: "alloy" });
+```
+
+`attachDemoRecorder` is additive — it starts a CDP screencast and adds `demo.act` / `demo.agent` / `demo.render`, but the Stagehand instance keeps its full surface for everything else (`extract`, `observe`, `navigate`, etc.). Frames captured during un-narrated time are simply not selected at render.
+
+### Caveats
+
+- **Native ffmpeg binary.** Pulls in `ffmpeg-static` (~44MB downloaded postinstall). Edge runtimes (Cloudflare Workers, Vercel Edge) can't run native binaries — Node serverless (Vercel Fluid Compute, Lambda) is fine.
+- **Single TTS provider in v1.** OpenAI `gpt-4o-mini-tts` via `OPENAI_API_KEY`. Pluggable via the `tts` option to `renderTimeline` if you need a different backend.
+- **Failure semantics.** If any action throws, the recorder is detached and the error propagates — no partial video is produced.
 
 ## Localhost Tunneling (Cloud Mode)
 

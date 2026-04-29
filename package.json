@@ -26,6 +26,10 @@
       "types": "./dist/script.d.ts",
       "import": "./dist/script.js"
     },
+    "./demo": {
+      "types": "./dist/demo/index.d.ts",
+      "import": "./dist/demo/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -62,13 +66,16 @@
     ]
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.54",
     "@browserbasehq/sdk": "^2.6.0",
     "@browserbasehq/stagehand": "^3.1.0",
     "@mcp-ui/server": "^5.10.0",
     "@modelcontextprotocol/sdk": "^1.13.1",
     "@ngrok/ngrok": "^1.4.1",
+    "ai": "^6.0.169",
     "commander": "^14.0.0",
     "dotenv": "^16.4.6",
+    "ffmpeg-static": "^5.3.0",
     "sharp": "^0.33.0",
     "tsx": "^4.20.3",
     "ws": "^8.18.0",
