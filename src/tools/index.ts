@@ -8,6 +8,7 @@ import getUrlTool from "./url.js";
 import agentTool from "./agent.js";
 import scenarioTool from "./scenario.js";
 import runScriptTool from "./runScript.js";
+import demoVideoTool from "./demoVideo.js";
 import agentBrowserTools from "./agentBrowser.js";
 
 // Export individual tools
@@ -21,6 +22,7 @@ export { default as getUrlTool } from "./url.js";
 export { default as agentTool } from "./agent.js";
 export { default as scenarioTool } from "./scenario.js";
 export { default as runScriptTool } from "./runScript.js";
+export { default as demoVideoTool } from "./demoVideo.js";
 export { default as agentBrowserTools } from "./agentBrowser.js";
 
 // Export all tools as array
@@ -35,6 +37,7 @@ export const TOOLS = [
   agentTool,
   scenarioTool,
   runScriptTool,
+  demoVideoTool,
   ...agentBrowserTools,
 ];
 

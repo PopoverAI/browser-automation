@@ -35,3 +35,9 @@ npm-debug.log*
 # stagehand_run_script source-mode temp files (normally cleaned up;
 # leftovers after hard crashes land here)
 .stagehand-tmp/
+
+# Demo-video pipeline output (defaults to os.tmpdir(); this catches the case
+# where a developer points outputDir inside the repo).
+*.mp4
+*.mp3
+*.wav
