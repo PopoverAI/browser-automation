@@ -221,21 +221,38 @@ await stagehand.init();
 
 const demo = await attachDemoRecorder(stagehand);
 
-await demo.act("go to the login page", "navigating to the login page");
-await stagehand.extract({ /* ... */ });    // bare stagehand calls are ignored at render
-await demo.act("type credentials", "entering credentials");
-await demo.agent("complete the checkout", "the agent completes the checkout");
+try {
+  await demo.act("go to the login page", "navigating to the login page");
+  await stagehand.extract({ /* ... */ });    // bare stagehand calls are ignored at render
+  await demo.act("type credentials", "entering credentials");
+  await demo.agent("complete the checkout", "the agent completes the checkout");
 
-const { videoPath } = await demo.render({ outputDir: "./out", voice: "alloy" });
+  const { videoPath } = await demo.render({ outputDir: "./out", voice: "alloy" });
+} finally {
+  // Idempotent — safe to call before, after, or instead of render(). Use when
+  // you want to abort cleanup without producing an mp4.
+  await demo.stop();
+}
 ```
 
-`attachDemoRecorder` is additive — it starts a CDP screencast and adds `demo.act` / `demo.agent` / `demo.render`, but the Stagehand instance keeps its full surface for everything else (`extract`, `observe`, `navigate`, etc.). Frames captured during un-narrated time are simply not selected at render.
+`attachDemoRecorder` is additive — it starts a CDP screencast and adds `demo.act` / `demo.agent` / `demo.render` / `demo.stop`, but the Stagehand instance keeps its full surface for everything else (`extract`, `observe`, `navigate`, etc.). Frames captured during un-narrated time are simply not selected at render.
+
+The full surface:
+
+| Method | Purpose |
+|---|---|
+| `demo.act(instruction, narrate, opts?)` | Run a `stagehand.act` and record one narrated segment. |
+| `demo.agent(goal, narrate, opts?)` | Run a `stagehand.agent` execution as a single narrated segment. |
+| `demo.timeline()` | Read the captured `{ entries, frames }` without rendering. |
+| `demo.render(opts?)` | Stop the screencast, run TTS + ffmpeg, return `{ videoPath, outputDir, timeline, frames }`. Detaches the recorder. |
+| `demo.stop()` | Stop the screencast and detach without rendering. Idempotent. Use in `finally` blocks. |
 
 ### Caveats
 
 - **Native ffmpeg binary.** Pulls in `ffmpeg-static` (~44MB downloaded postinstall). Edge runtimes (Cloudflare Workers, Vercel Edge) can't run native binaries — Node serverless (Vercel Fluid Compute, Lambda) is fine.
-- **Single TTS provider in v1.** OpenAI `gpt-4o-mini-tts` via `OPENAI_API_KEY`. Pluggable via the `tts` option to `renderTimeline` if you need a different backend.
-- **Failure semantics.** If any action throws, the recorder is detached and the error propagates — no partial video is produced.
+- **Single TTS provider in v1.** OpenAI `gpt-4o-mini-tts` via `OPENAI_API_KEY`. `createOpenAITTS` throws at construction time if no key is available, so missing-key errors surface clearly. Pluggable via the `tts` option to `renderTimeline` if you need a different backend.
+- **Failure semantics.** If any action throws inside the MCP tool, `demo.stop()` runs as cleanup and the original error propagates — no partial video is produced. If `stop()` itself fails, the cleanup error is logged to stderr and attached as `cause` on the wrapped error.
+- **Stagehand v3 internal API.** The recorder reads CDP via `stagehand.context.activePage().getSessionForFrame(...)` — Stagehand v3's documented (but not stability-guaranteed) path. A future Stagehand upgrade that moves these methods will surface a clear "v3 internal API may have changed" error at attach time.
 
 ## Localhost Tunneling (Cloud Mode)
 
