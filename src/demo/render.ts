@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -14,6 +14,29 @@ import ffmpegPath from "ffmpeg-static";
 import type { CapturedFrame, TimelineEntry } from "./recorder.js";
 import { createOpenAITTS, type TTSProvider } from "./tts.js";
 
+/**
+ * Result returned by the exec test seam (and by the default `spawnSync`-based
+ * runner). Mirrors the spawn-result shape so a test can decide what to do based
+ * on stdout, stderr, and exit status — same way the real implementation does.
+ */
+export interface ExecResult {
+  stdout: string;
+  stderr: string;
+  status: number | null;
+}
+
+/**
+ * Test seam for invoking ffmpeg. The default runs `spawnSync(bin, args)` with
+ * no shell. Tests can pass a stub that records arguments and returns canned
+ * output. Note: arguments are passed as an array — never a shell command
+ * string — so user-supplied paths (outputDir, audio paths, etc.) cannot be
+ * interpreted as shell metacharacters.
+ */
+export type ExecRunner = (
+  bin: string,
+  args: ReadonlyArray<string>,
+) => ExecResult;
+
 export interface RenderTimelineOptions {
   timeline: TimelineEntry[];
   frames: CapturedFrame[];
@@ -28,8 +51,8 @@ export interface RenderTimelineOptions {
    * after the final video is concatenated. Set true to inspect intermediates.
    */
   keepIntermediates?: boolean;
-  /** Test seam: override the exec runner used to invoke ffmpeg. */
-  exec?: (cmd: string) => string;
+  /** Test seam: override the runner used to invoke ffmpeg. */
+  exec?: ExecRunner;
 }
 
 export interface RenderedSegment {
@@ -53,6 +76,16 @@ const DEFAULT_VOICE = "alloy";
 const MIN_FRAME_DURATION = 0.1;
 const MAX_FRAME_DURATION = 10;
 const FALLBACK_LAST_FRAME_DURATION = 5;
+
+const defaultExec: ExecRunner = (bin, args) => {
+  const r = spawnSync(bin, [...args], { encoding: "utf8" });
+  if (r.error) throw r.error;
+  return {
+    stdout: r.stdout ?? "",
+    stderr: r.stderr ?? "",
+    status: r.status,
+  };
+};
 
 /**
  * Run the per-segment + concat pipeline. Returns the path to the final mp4.
@@ -82,8 +115,7 @@ export async function renderTimeline(
 
   const voice = options.voice ?? DEFAULT_VOICE;
   const tts = options.tts ?? createOpenAITTS();
-  const exec = options.exec ?? ((cmd: string) =>
-    execSync(cmd, { encoding: "utf8" }));
+  const exec: ExecRunner = options.exec ?? defaultExec;
 
   const partial: { segments: RenderedSegment[] } = { segments: [] };
 
@@ -107,16 +139,30 @@ export async function renderTimeline(
     partial.segments = segments;
 
     // Phase 2: concat — stream copy, no re-encode.
+    //
+    // The concat-demuxer file format wraps each path in single quotes and
+    // resolves them as literal filenames (no shell). To handle paths that
+    // legitimately contain a single quote, ffmpeg's documented escape is
+    // closing the quote, inserting a backslashed quote, and reopening the
+    // quote: 'foo'\''bar'. Apply that escape so the concat list is robust
+    // even if the caller supplies an outputDir with quotes in it.
     const segmentListPath = join(outputDir, "segments.txt");
     writeFileSync(
       segmentListPath,
-      segments.map((s) => `file '${s.segmentVideoPath}'`).join("\n"),
+      segments
+        .map((s) => `file '${escapeConcatPath(s.segmentVideoPath ?? "")}'`)
+        .join("\n"),
     );
 
     const finalPath = join(outputDir, "final.mp4");
-    exec(
-      `${quote(ffmpeg)} -y -f concat -safe 0 -i ${quote(segmentListPath)} -c copy ${quote(finalPath)}`,
-    );
+    runChecked(exec, ffmpeg, [
+      "-y",
+      "-f", "concat",
+      "-safe", "0",
+      "-i", segmentListPath,
+      "-c", "copy",
+      finalPath,
+    ]);
 
     if (!options.keepIntermediates) {
       cleanupIntermediates(outputDir, segments);
@@ -147,7 +193,7 @@ interface SegmentInput {
   voice: string;
   tts: TTSProvider;
   ffmpeg: string;
-  exec: (cmd: string) => string;
+  exec: ExecRunner;
 }
 
 async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
@@ -208,44 +254,49 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
       duration = FALLBACK_LAST_FRAME_DURATION;
     }
     duration = Math.max(MIN_FRAME_DURATION, Math.min(duration, MAX_FRAME_DURATION));
-    concatLines.push(`file '${framePaths[j]}'`);
+    concatLines.push(`file '${escapeConcatPath(framePaths[j])}'`);
     concatLines.push(`duration ${duration.toFixed(3)}`);
   }
-  concatLines.push(`file '${framePaths[framePaths.length - 1]}'`);
+  concatLines.push(
+    `file '${escapeConcatPath(framePaths[framePaths.length - 1])}'`,
+  );
 
   const concatFilePath = join(framesDir, "frames.txt");
   writeFileSync(concatFilePath, concatLines.join("\n"));
 
-  // 4. Probe audio duration. ffmpeg-static doesn't ship ffprobe, so we use
-  //    the same shell-pipe approach the spike validated.
-  const durationStr = exec(
-    `${quote(ffmpeg)} -i ${quote(audioPath)} 2>&1 | grep Duration | cut -d ' ' -f 4 | cut -d ',' -f 1`,
-  ).trim();
-  if (!/^\d{2}:\d{2}:\d{2}/.test(durationStr)) {
+  // 4. Probe audio duration. ffmpeg-static doesn't ship ffprobe, so we run
+  //    `ffmpeg -i <audio>` (no output specified — exits non-zero by design)
+  //    and parse the `Duration: HH:MM:SS.ms` line out of stderr in Node.
+  //    Don't use a shell pipe: anything user-supplied could otherwise be
+  //    interpreted as shell metacharacters.
+  const probe = exec(ffmpeg, ["-i", audioPath]);
+  const durationMatch = probe.stderr.match(
+    /Duration:\s*(\d{2}:\d{2}:\d{2}\.\d{2})/,
+  );
+  if (!durationMatch) {
     throw new Error(
-      `renderTimeline: could not parse audio duration from ffmpeg output for segment ${index}: "${durationStr}"`,
+      `renderTimeline: could not parse audio duration from ffmpeg output for segment ${index}. stderr was: ${probe.stderr.slice(0, 500)}`,
     );
   }
+  const durationStr = durationMatch[1];
 
   // 5. Encode the segment.
   const segmentPath = join(outputDir, `segment-${index}.mp4`);
-  const cmd = [
-    quote(ffmpeg),
+  runChecked(exec, ffmpeg, [
     "-y",
-    "-f concat",
-    "-safe 0",
-    `-i ${quote(concatFilePath)}`,
-    `-i ${quote(audioPath)}`,
-    "-map 0:v",
-    "-map 1:a",
-    `-vf "scale=trunc(iw/2)*2:trunc(ih/2)*2"`,
-    "-c:v libx264",
-    "-pix_fmt yuv420p",
-    "-c:a aac",
-    `-t ${durationStr}`,
-    quote(segmentPath),
-  ].join(" ");
-  exec(cmd);
+    "-f", "concat",
+    "-safe", "0",
+    "-i", concatFilePath,
+    "-i", audioPath,
+    "-map", "0:v",
+    "-map", "1:a",
+    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+    "-c:v", "libx264",
+    "-pix_fmt", "yuv420p",
+    "-c:a", "aac",
+    "-t", durationStr,
+    segmentPath,
+  ]);
 
   return {
     entry,
@@ -253,6 +304,20 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
     ttsAudioPath: audioPath,
     frameCount: segmentFrames.length,
   };
+}
+
+function runChecked(
+  exec: ExecRunner,
+  bin: string,
+  args: ReadonlyArray<string>,
+): ExecResult {
+  const r = exec(bin, args);
+  if (r.status !== 0 && r.status !== null) {
+    throw new Error(
+      `renderTimeline: ffmpeg exited with status ${r.status}. stderr was: ${r.stderr.slice(0, 1000)}`,
+    );
+  }
+  return r;
 }
 
 function cleanupIntermediates(
@@ -276,6 +341,12 @@ function cleanupIntermediates(
   if (existsSync(segmentsList)) rmSync(segmentsList, { force: true });
 }
 
-function quote(p: string): string {
-  return `"${p.replace(/"/g, '\\"')}"`;
+/**
+ * Escape a single path for use inside a single-quoted ffmpeg concat-demuxer
+ * `file '<path>'` line. The concat parser only needs to handle the literal `'`
+ * character — all other shell metacharacters are inert because the file is
+ * read by ffmpeg directly, never by a shell.
+ */
+function escapeConcatPath(p: string): string {
+  return p.replace(/'/g, "'\\''");
 }

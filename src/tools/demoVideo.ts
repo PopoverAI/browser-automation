@@ -90,10 +90,23 @@ async function handleDemoVideo(
         await demo.act(a.instruction, a.narrate);
       }
     } catch (err) {
-      // Best-effort detach so the screencast doesn't keep running.
-      await demo.render().catch(() => undefined);
+      // Best-effort cleanup so the screencast doesn't keep running. Log any
+      // cleanup failure to stderr (the action error is still primary) and
+      // attach it as `cause` so debuggers can see both.
+      let stopErr: unknown;
+      try {
+        await demo.stop();
+      } catch (e) {
+        stopErr = e;
+        process.stderr.write(
+          `[stagehand_demo_video] cleanup stop() failed: ${e instanceof Error ? e.message : String(e)}\n`,
+        );
+      }
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`stagehand_demo_video: action failed — ${msg}`);
+      const wrapped = new Error(`stagehand_demo_video: action failed — ${msg}`, {
+        cause: stopErr ?? err,
+      });
+      throw wrapped;
     }
 
     const result = await demo.render({

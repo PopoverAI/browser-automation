@@ -271,4 +271,66 @@ describe("attachDemoRecorder", () => {
       /no active page/,
     );
   });
+
+  it("uses CDP metadata.timestamp (not Date.now) for frame timestamps", async () => {
+    // Regression for the event-loop-jitter issue: the recorder previously
+    // stamped frames with Date.now() — when JS got around to the event —
+    // which can differ from the browser-capture time by tens of ms under
+    // load. Use the CDP-supplied wall-clock timestamp instead.
+    const { stagehand } = makeFakeStagehand(cdp, { framesPerAct: 0 });
+    const demo = await attachDemoRecorder(stagehand, { trailingDelay: 0 });
+
+    // Emit a frame whose CDP-reported timestamp is deliberately far from now
+    // (10 minutes in the past). If the recorder used Date.now() it would
+    // record "now"; the CDP timestamp says "10 minutes ago".
+    const cdpTsSeconds = Date.now() / 1000 - 600;
+    cdp.emit("Page.screencastFrame", {
+      data: "frame-with-known-ts",
+      sessionId: cdp.id,
+      metadata: { timestamp: cdpTsSeconds },
+    });
+
+    const { frames } = demo.timeline();
+    expect(frames).toHaveLength(1);
+    expect(frames[0].timestamp).toBe(Math.round(cdpTsSeconds * 1000));
+  });
+
+  it("stop() detaches without rendering and is idempotent", async () => {
+    // demo.stop is the cleanup escape hatch — useful in try/finally when the
+    // caller doesn't want to (or can't) produce a render. Calling stop()
+    // multiple times must not double-stop the screencast.
+    const { stagehand } = makeFakeStagehand(cdp);
+    const demo = await attachDemoRecorder(stagehand, { trailingDelay: 10 });
+
+    await demo.act("only", "only narrative");
+    expect(cdp.hasListener("Page.screencastFrame")).toBe(true);
+
+    await demo.stop();
+    expect(cdp.sent.filter((c) => c.method === "Page.stopScreencast")).toHaveLength(1);
+    expect(cdp.hasListener("Page.screencastFrame")).toBe(false);
+
+    await demo.stop(); // idempotent
+    expect(cdp.sent.filter((c) => c.method === "Page.stopScreencast")).toHaveLength(1);
+
+    await expect(
+      demo.act("post-stop", "should fail"),
+    ).rejects.toThrow(/recorder has been stopped/);
+  });
+
+  it("surfaces a clear error if the v3 internal CDP API is missing", async () => {
+    // Future Stagehand versions may rename or remove getSessionForFrame /
+    // mainFrameId / activePage. We don't want a cryptic NPE — surface a
+    // clear "internal API may have changed" message at attach time.
+    const stagehand = {
+      context: {
+        activePage: () => ({
+          /* deliberately missing mainFrameId / getSessionForFrame */
+        }),
+      },
+    } as unknown as Stagehand;
+
+    await expect(attachDemoRecorder(stagehand)).rejects.toThrow(
+      /Stagehand v3 internal API may have changed/,
+    );
+  });
 });

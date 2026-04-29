@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { renderTimeline } from "../src/demo/render.js";
+import type { ExecResult, ExecRunner } from "../src/demo/render.js";
 import type { TTSProvider } from "../src/demo/tts.js";
 import type { CapturedFrame, TimelineEntry } from "../src/demo/recorder.js";
 
@@ -17,8 +18,6 @@ function makeTimeline(): {
   timeline: TimelineEntry[];
   frames: CapturedFrame[];
 } {
-  // Two segments, three frames each, with a 10ms gap of un-narrated frames
-  // between them that should be excluded from both segments.
   const f = (t: number, label: string): CapturedFrame => ({
     timestamp: t,
     data: Buffer.from(`fake-png-${label}`).toString("base64"),
@@ -45,9 +44,7 @@ function makeTimeline(): {
     f(1010, "a1"),
     f(1050, "a2"),
     f(1090, "a3"),
-    // un-narrated:
     f(1150, "between"),
-    // entry 2:
     f(1210, "b1"),
     f(1250, "b2"),
     f(1290, "b3"),
@@ -56,12 +53,39 @@ function makeTimeline(): {
   return { timeline: [entry1, entry2], frames };
 }
 
-function fakeExec(records: Array<{ cmd: string; output: string }>) {
-  return (cmd: string): string => {
-    const r = records.find((rec) => cmd.includes(rec.cmd));
-    if (r) return r.output;
-    return "";
+const PROBE_STDERR =
+  "ffmpeg version blah\n  Duration: 00:00:02.50, start: 0.000000, bitrate: 32 kb/s\n  Stream #0:0\n";
+
+/**
+ * A reasonable default exec stub: probe calls (`-i path`, no output) return
+ * stderr with a Duration line; encode/concat calls return status 0 and write
+ * a placeholder mp4 to whatever output path appears last in the args.
+ */
+function makeDefaultExec(): {
+  exec: ExecRunner & { mock: { calls: Array<[string, ReadonlyArray<string>]> } };
+} {
+  const calls: Array<[string, ReadonlyArray<string>]> = [];
+  const fn = (
+    bin: string,
+    args: ReadonlyArray<string>,
+  ): ExecResult => {
+    calls.push([bin, args]);
+    const isProbe = args.length === 2 && args[0] === "-i";
+    if (isProbe) {
+      return { stdout: "", stderr: PROBE_STDERR, status: 1 };
+    }
+    // For encode/concat: pretend ffmpeg succeeded and create the output file
+    // (concat-list lookups depend on it existing).
+    const last = args[args.length - 1];
+    if (last && last.endsWith(".mp4")) {
+      writeFileSync(last, "fake mp4 data");
+    }
+    return { stdout: "", stderr: "", status: 0 };
   };
+  Object.defineProperty(fn, "mock", { value: { calls } });
+  return { exec: fn as unknown as ExecRunner & {
+    mock: { calls: Array<[string, ReadonlyArray<string>]> };
+  } };
 }
 
 describe("renderTimeline", () => {
@@ -86,11 +110,7 @@ describe("renderTimeline", () => {
 
   it("invokes TTS for each timeline entry", async () => {
     const { timeline, frames } = makeTimeline();
-    const exec = vi.fn((cmd: string) => {
-      // Audio duration probe: return a parseable timestamp.
-      if (cmd.includes("grep Duration")) return "00:00:02.50";
-      return "";
-    });
+    const { exec } = makeDefaultExec();
 
     await renderTimeline({
       timeline,
@@ -112,10 +132,7 @@ describe("renderTimeline", () => {
 
   it("filters frames to each entry's [startTime, endTime] window", async () => {
     const { timeline, frames } = makeTimeline();
-    const exec = vi.fn((cmd: string) => {
-      if (cmd.includes("grep Duration")) return "00:00:02.50";
-      return "";
-    });
+    const { exec } = makeDefaultExec();
 
     const result = await renderTimeline({
       timeline,
@@ -130,7 +147,6 @@ describe("renderTimeline", () => {
     expect(result.segments[0].frameCount).toBe(3);
     expect(result.segments[1].frameCount).toBe(3);
 
-    // The "between" frame should not show up in either segment's frame dir.
     const seg0FrameContents = readFileSync(
       join(outputDir, "segment-0-frames", "frame-000.png"),
       "utf8",
@@ -145,10 +161,7 @@ describe("renderTimeline", () => {
 
   it("calls ffmpeg per segment + once for the final concat", async () => {
     const { timeline, frames } = makeTimeline();
-    const exec = vi.fn((cmd: string) => {
-      if (cmd.includes("grep Duration")) return "00:00:02.50";
-      return "";
-    });
+    const { exec } = makeDefaultExec();
 
     await renderTimeline({
       timeline,
@@ -159,13 +172,14 @@ describe("renderTimeline", () => {
       keepIntermediates: true,
     });
 
-    const calls = exec.mock.calls.map((c) => c[0]);
-    const probeCalls = calls.filter((c) => c.includes("grep Duration"));
-    const encodeCalls = calls.filter(
-      (c) => c.includes("-f concat") && c.includes("libx264"),
+    const calls = exec.mock.calls;
+    const probeCalls = calls.filter(([, args]) =>
+      args.length === 2 && args[0] === "-i",
     );
+    const encodeCalls = calls.filter(([, args]) => args.includes("libx264"));
     const concatCalls = calls.filter(
-      (c) => c.includes("-f concat") && c.includes("-c copy"),
+      ([, args]) =>
+        args.includes("concat") && args.includes("copy") && !args.includes("libx264"),
     );
 
     expect(probeCalls).toHaveLength(2);
@@ -175,10 +189,7 @@ describe("renderTimeline", () => {
 
   it("includes the even-dimension scale filter in encode commands", async () => {
     const { timeline, frames } = makeTimeline();
-    const exec = vi.fn((cmd: string) => {
-      if (cmd.includes("grep Duration")) return "00:00:02.50";
-      return "";
-    });
+    const { exec } = makeDefaultExec();
 
     await renderTimeline({
       timeline,
@@ -189,22 +200,19 @@ describe("renderTimeline", () => {
       keepIntermediates: true,
     });
 
-    const encodeCmd = exec.mock.calls
-      .map((c) => c[0])
-      .find((c) => c.includes("libx264"));
-    expect(encodeCmd).toContain("scale=trunc(iw/2)*2:trunc(ih/2)*2");
-    expect(encodeCmd).toContain("-t 00:00:02.50");
+    const encodeCall = exec.mock.calls.find(([, args]) =>
+      args.includes("libx264"),
+    );
+    expect(encodeCall).toBeDefined();
+    const encodeArgs = encodeCall![1] as ReadonlyArray<string>;
+    expect(encodeArgs).toContain("scale=trunc(iw/2)*2:trunc(ih/2)*2");
+    expect(encodeArgs).toContain("-t");
+    expect(encodeArgs).toContain("00:00:02.50");
   });
 
   it("produces a concat list with one entry per segment in order", async () => {
     const { timeline, frames } = makeTimeline();
-    const exec = vi.fn((cmd: string) => {
-      if (cmd.includes("grep Duration")) return "00:00:02.50";
-      // Simulate ffmpeg writing the final mp4.
-      const m = cmd.match(/-c copy "([^"]+)"/);
-      if (m) writeFileSync(m[1], "fake mp4 data");
-      return "";
-    });
+    const { exec } = makeDefaultExec();
 
     await renderTimeline({
       timeline,
@@ -225,15 +233,139 @@ describe("renderTimeline", () => {
     expect(lines[1]).toMatch(/segment-1\.mp4/);
   });
 
+  it("never invokes the exec runner with a shell command string (no shell)", async () => {
+    // Regression test for the shell-injection vector: outputDir flows in from
+    // the caller and used to be interpolated into a shell command. The exec
+    // contract is now (bin, args) — verify every invocation passes args as an
+    // array and the binary as a separate string. Shell metacharacters in any
+    // input must be treated as literal path bytes by ffmpeg.
+    const { timeline, frames } = makeTimeline();
+    const { exec } = makeDefaultExec();
+    const trickySubdir = `weird $(touch /tmp/PWNED) 'and"quotes`;
+    const trickyDir = join(outputDir, trickySubdir);
+
+    await renderTimeline({
+      timeline,
+      frames,
+      outputDir: trickyDir,
+      tts,
+      exec,
+      keepIntermediates: true,
+    });
+
+    expect(exec.mock.calls.length).toBeGreaterThan(0);
+    for (const [bin, args] of exec.mock.calls) {
+      expect(typeof bin).toBe("string");
+      expect(Array.isArray(args)).toBe(true);
+      // The dangerous metacharacters appear (literally) inside individual args
+      // but never as their own command tokens.
+      expect(args).not.toContain("touch");
+      expect(args).not.toContain("/tmp/PWNED");
+    }
+    // And the dangerous side effect did not happen.
+    expect(existsSync("/tmp/PWNED")).toBe(false);
+  });
+
+  it("escapes single quotes in concat-demuxer paths", async () => {
+    // ffmpeg's concat demuxer wraps each path in single quotes. If a path
+    // legitimately contains a single quote, the documented escape is
+    // 'foo'\''bar'. Ensure we apply it so an outputDir containing a quote
+    // doesn't produce an invalid concat file.
+    const { timeline, frames } = makeTimeline();
+    const { exec } = makeDefaultExec();
+    const trickyDir = join(outputDir, "with'quote");
+
+    await renderTimeline({
+      timeline,
+      frames,
+      outputDir: trickyDir,
+      tts,
+      exec,
+      keepIntermediates: true,
+    });
+
+    const list = readFileSync(join(trickyDir, "segments.txt"), "utf8");
+    // Each line should still wrap the path in single quotes and use the
+    // documented '\'' escape. No bare single quotes inside the path region.
+    for (const line of list.split("\n")) {
+      // The pattern `file 'PATH'` plus optional escaped-quote sequences inside.
+      expect(line.startsWith("file '")).toBe(true);
+      expect(line.endsWith("'")).toBe(true);
+      expect(line).toContain("'\\''");
+    }
+  });
+
+  it("falls back to the most recent prior frame when a segment has no frames in its own window", async () => {
+    const timeline: TimelineEntry[] = [
+      {
+        instruction: "first",
+        narrative: "first narrative",
+        startTime: 1000,
+        endTime: 1100,
+        frameCount: 1,
+        segmentDuration: 0.1,
+      },
+      {
+        instruction: "no-op scroll",
+        narrative: "no visible change",
+        startTime: 1200,
+        endTime: 1300,
+        frameCount: 0,
+        segmentDuration: 0.1,
+      },
+    ];
+    const frames: CapturedFrame[] = [
+      { timestamp: 1050, data: Buffer.from("frame-A").toString("base64") },
+    ];
+    const { exec } = makeDefaultExec();
+
+    const result = await renderTimeline({
+      timeline,
+      frames,
+      outputDir,
+      tts,
+      exec,
+      keepIntermediates: true,
+    });
+
+    expect(result.segments).toHaveLength(2);
+    expect(result.segments[1].frameCount).toBe(1);
+
+    const fallbackFrame = readFileSync(
+      join(outputDir, "segment-1-frames", "frame-000.png"),
+      "utf8",
+    );
+    expect(fallbackFrame).toBe("frame-A");
+  });
+
+  it("throws when there are no frames at all in the buffer", async () => {
+    const timeline: TimelineEntry[] = [
+      {
+        instruction: "missing",
+        narrative: "no frames captured",
+        startTime: 5000,
+        endTime: 5100,
+        frameCount: 0,
+        segmentDuration: 0.1,
+      },
+    ];
+    const frames: CapturedFrame[] = [];
+    const { exec } = makeDefaultExec();
+
+    await expect(
+      renderTimeline({
+        timeline,
+        frames,
+        outputDir,
+        tts,
+        exec,
+      }),
+    ).rejects.toThrow(/no frames available/);
+  });
+
   it("cleans up intermediates by default", async () => {
     const { timeline, frames } = makeTimeline();
-    const exec = vi.fn((cmd: string) => {
-      if (cmd.includes("grep Duration")) return "00:00:02.50";
-      // Simulate ffmpeg writing each output mp4 it's asked to produce.
-      const out = cmd.match(/"([^"]+\.mp4)"\s*$/);
-      if (out) writeFileSync(out[1], "fake mp4 data");
-      return "";
-    });
+    const { exec } = makeDefaultExec();
 
     const result = await renderTimeline({
       timeline,
@@ -257,12 +389,7 @@ describe("renderTimeline", () => {
 
   it("keeps intermediates when keepIntermediates: true", async () => {
     const { timeline, frames } = makeTimeline();
-    const exec = vi.fn((cmd: string) => {
-      if (cmd.includes("grep Duration")) return "00:00:02.50";
-      const out = cmd.match(/"([^"]+\.mp4)"\s*$/);
-      if (out) writeFileSync(out[1], "fake mp4 data");
-      return "";
-    });
+    const { exec } = makeDefaultExec();
 
     const result = await renderTimeline({
       timeline,
@@ -279,99 +406,16 @@ describe("renderTimeline", () => {
     expect(result.segments[0].ttsAudioPath).toBeDefined();
   });
 
-  it("falls back to the most recent prior frame when a segment has no frames in its own window", async () => {
-    // Action emitted no visual change inside [startTime, endTime] (e.g. a
-    // scroll that didn't actually move anything). The segment should still
-    // render using the most recent frame captured before startTime — the
-    // narration plays over a freeze of the page's current state.
-    const timeline: TimelineEntry[] = [
-      {
-        instruction: "first",
-        narrative: "first narrative",
-        startTime: 1000,
-        endTime: 1100,
-        frameCount: 1,
-        segmentDuration: 0.1,
-      },
-      {
-        instruction: "no-op scroll",
-        narrative: "no visible change",
-        startTime: 1200,
-        endTime: 1300,
-        frameCount: 0,
-        segmentDuration: 0.1,
-      },
-    ];
-    const frames: CapturedFrame[] = [
-      { timestamp: 1050, data: Buffer.from("frame-A").toString("base64") },
-      // No frames between 1200 and 1300.
-    ];
-    const exec = vi.fn((cmd: string) => {
-      if (cmd.includes("grep Duration")) return "00:00:01.50";
-      const out = cmd.match(/"([^"]+\.mp4)"\s*$/);
-      if (out) writeFileSync(out[1], "fake mp4 data");
-      return "";
-    });
-
-    const result = await renderTimeline({
-      timeline,
-      frames,
-      outputDir,
-      tts,
-      exec,
-      keepIntermediates: true,
-    });
-
-    expect(result.segments).toHaveLength(2);
-    expect(result.segments[1].frameCount).toBe(1);
-
-    // The fallback frame is the one captured at t=1050.
-    const fallbackFrame = readFileSync(
-      join(outputDir, "segment-1-frames", "frame-000.png"),
-      "utf8",
-    );
-    expect(fallbackFrame).toBe("frame-A");
-  });
-
-  it("throws when there are no frames at all in the buffer", async () => {
-    const timeline: TimelineEntry[] = [
-      {
-        instruction: "missing",
-        narrative: "no frames captured",
-        startTime: 5000,
-        endTime: 5100,
-        frameCount: 0,
-        segmentDuration: 0.1,
-      },
-    ];
-    const frames: CapturedFrame[] = [];
-
-    await expect(
-      renderTimeline({
-        timeline,
-        frames,
-        outputDir,
-        tts,
-        exec: fakeExec([]),
-      }),
-    ).rejects.toThrow(/no frames available/);
-  });
-
-  it("throws if duration probe output is unparseable", async () => {
+  it("throws if the duration probe stderr has no Duration line", async () => {
     const { timeline, frames } = makeTimeline();
-    const exec = vi.fn((cmd: string) => {
-      if (cmd.includes("grep Duration")) return "garbage output";
-      return "";
-    });
+    const exec: ExecRunner = (_bin, args) => {
+      const isProbe = args.length === 2 && args[0] === "-i";
+      if (isProbe) return { stdout: "", stderr: "garbage output", status: 1 };
+      return { stdout: "", stderr: "", status: 0 };
+    };
 
     await expect(
-      renderTimeline({
-        timeline,
-        frames,
-        outputDir,
-        tts,
-        exec,
-      }),
+      renderTimeline({ timeline, frames, outputDir, tts, exec }),
     ).rejects.toThrow(/could not parse audio duration/);
   });
 
@@ -384,5 +428,23 @@ describe("renderTimeline", () => {
         tts,
       }),
     ).rejects.toThrow(/timeline is empty/);
+  });
+
+  it("throws if ffmpeg encode exits non-zero", async () => {
+    const { timeline, frames } = makeTimeline();
+    const exec: ExecRunner = (_bin, args) => {
+      const isProbe = args.length === 2 && args[0] === "-i";
+      if (isProbe) return { stdout: "", stderr: PROBE_STDERR, status: 1 };
+      // Encode call: simulate failure.
+      return {
+        stdout: "",
+        stderr: "Conversion failed!",
+        status: 1,
+      };
+    };
+
+    await expect(
+      renderTimeline({ timeline, frames, outputDir, tts, exec }),
+    ).rejects.toThrow(/ffmpeg exited with status 1/);
   });
 });

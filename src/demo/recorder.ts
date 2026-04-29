@@ -3,7 +3,13 @@ import type { Stagehand } from "@browserbasehq/stagehand";
 import { renderTimeline, type RenderTimelineOptions } from "./render.js";
 
 export interface CapturedFrame {
-  /** Wall-clock timestamp (ms since epoch) when Node received the frame. */
+  /**
+   * Wall-clock timestamp (ms since epoch) the browser captured the frame.
+   * Sourced from CDP's `Page.screencastFrame` `metadata.timestamp` (UTC
+   * seconds since epoch, multiplied by 1000) — not Node's `Date.now()` —
+   * to avoid event-loop jitter shifting frames across segment boundaries.
+   * Falls back to `Date.now()` if the CDP event omits the timestamp.
+   */
   timestamp: number;
   /** Base64-encoded PNG data. */
   data: string;
@@ -79,6 +85,12 @@ export interface DemoRecorder {
     opts?: DemoAgentOptions,
   ): Promise<Awaited<ReturnType<StagehandAgent["execute"]>>>;
   timeline(): { entries: TimelineEntry[]; frames: CapturedFrame[] };
+  /**
+   * Stop the screencast and detach the listener without rendering. Idempotent
+   * — calling stop() multiple times, or before render(), is safe. Use when the
+   * caller wants to abort cleanup in a `finally` without producing an mp4.
+   */
+  stop(): Promise<void>;
   render(opts?: DemoRenderOptions): Promise<RenderResult>;
 }
 
@@ -86,6 +98,53 @@ interface ScreencastFrameEvent {
   data: string;
   sessionId: string;
   metadata?: { timestamp?: number };
+}
+
+/**
+ * Acquire the CDP session backing the active page, going through Stagehand v3's
+ * internal page surface. v3 does not expose a public Playwright `Page` (that
+ * was the v2 surface), so this is the only path. We runtime-guard each step
+ * with a clear error so a future Stagehand upgrade that moves these methods
+ * fails loudly rather than producing cryptic NPEs.
+ */
+function acquireCdpForActivePage(stagehand: Stagehand) {
+  const ctx = stagehand.context;
+  if (!ctx || typeof ctx.activePage !== "function") {
+    throw new Error(
+      "attachDemoRecorder: stagehand.context.activePage is not a function — Stagehand v3 internal API may have changed.",
+    );
+  }
+  const page = ctx.activePage();
+  if (!page) {
+    throw new Error(
+      "attachDemoRecorder: no active page on the Stagehand context",
+    );
+  }
+  const pageAny = page as unknown as {
+    mainFrameId?: () => string;
+    getSessionForFrame?: (id: string) => unknown;
+  };
+  if (typeof pageAny.mainFrameId !== "function") {
+    throw new Error(
+      "attachDemoRecorder: page.mainFrameId is not a function — Stagehand v3 internal API may have changed.",
+    );
+  }
+  if (typeof pageAny.getSessionForFrame !== "function") {
+    throw new Error(
+      "attachDemoRecorder: page.getSessionForFrame is not a function — Stagehand v3 internal API may have changed.",
+    );
+  }
+  return pageAny.getSessionForFrame(pageAny.mainFrameId()) as {
+    on: (
+      event: string,
+      handler: (event: ScreencastFrameEvent) => void,
+    ) => void;
+    off: (
+      event: string,
+      handler: (event: ScreencastFrameEvent) => void,
+    ) => void;
+    send: (method: string, params?: unknown) => Promise<unknown>;
+  };
 }
 
 /**
@@ -109,22 +168,23 @@ export async function attachDemoRecorder(
     trailingDelay: defaultTrailingDelay = 1000,
   } = options;
 
-  const page = stagehand.context.activePage();
-  if (!page) {
-    throw new Error(
-      "attachDemoRecorder: no active page on the Stagehand context",
-    );
-  }
-
-  const frameId = page.mainFrameId();
-  const cdp = page.getSessionForFrame(frameId);
+  const cdp = acquireCdpForActivePage(stagehand);
 
   const frames: CapturedFrame[] = [];
   const entries: TimelineEntry[] = [];
   let stopped = false;
 
   const onFrame = (event: ScreencastFrameEvent) => {
-    frames.push({ timestamp: Date.now(), data: event.data });
+    // Prefer CDP's wall-clock timestamp (seconds since epoch) over
+    // Date.now(): the latter records when JS got around to processing the
+    // event, which can drift tens of ms under load and shift frames across
+    // segment boundaries.
+    const cdpTs = event.metadata?.timestamp;
+    const ts =
+      typeof cdpTs === "number" && Number.isFinite(cdpTs)
+        ? cdpTs * 1000
+        : Date.now();
+    frames.push({ timestamp: ts, data: event.data });
     void cdp
       .send("Page.screencastFrameAck", { sessionId: event.sessionId })
       .catch(() => {
@@ -161,7 +221,7 @@ export async function attachDemoRecorder(
   ): Promise<R> => {
     if (stopped) {
       throw new Error(
-        `DemoRecorder.${methodLabel}: recorder has been stopped (render() was called)`,
+        `DemoRecorder.${methodLabel}: recorder has been stopped`,
       );
     }
     const startTime = Date.now();
@@ -200,6 +260,9 @@ export async function attachDemoRecorder(
     },
     timeline() {
       return { entries: [...entries], frames: [...frames] };
+    },
+    async stop() {
+      await stop();
     },
     async render(opts = {}) {
       await stop();

@@ -20,15 +20,21 @@ export interface TTSProvider {
 
 /**
  * Default OpenAI TTS provider. Reads `OPENAI_API_KEY` from the environment
- * unless an explicit key is passed.
+ * unless an explicit key is passed. Throws at construction time if no key
+ * is available, so callers see a clear error instead of an opaque SDK
+ * exception on the first `speak()` call.
  */
 export function createOpenAITTS(opts: {
   apiKey?: string;
   model?: string;
 } = {}): TTSProvider {
-  const provider = createOpenAI({
-    apiKey: opts.apiKey ?? process.env.OPENAI_API_KEY,
-  });
+  const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "createOpenAITTS: OPENAI_API_KEY is not set (and no apiKey was supplied). Set the env var or pass { apiKey } explicitly.",
+    );
+  }
+  const provider = createOpenAI({ apiKey });
   const modelId = opts.model ?? "gpt-4o-mini-tts";
   return {
     async speak(text, voice) {
