@@ -83,9 +83,16 @@ does not trigger a round.
 The review path is ported from `PopoverAI/dotrequirements`, whose
 `docs/working/ci-pr-review.md` is the design write-up. Both copies are kept as
 close as possible so a fix in either ports by diff. Two deliberate divergences,
-both commented in the workflow: this repo is public, so the decide step gates
-review on the PR author being OWNER/MEMBER/COLLABORATOR; and the Fable/release
-branch is inert here, since there is no `production` branch.
+both commented in the workflow: this repo is public, so the decide step only
+reviews PRs whose head branch lives in this repository (pushing one already
+requires write access), falling back to an OWNER/MEMBER/COLLABORATOR check for
+a collaborator working from a fork; and the Fable/release branch is inert here,
+since there is no `production` branch.
+
+Don't narrow that gate to `author_association` alone — it isn't dependable.
+PR #8 reported `CONTRIBUTOR` for an org member whose comment on PR #6 reported
+`MEMBER`, and an assoc-only gate skipped a maintainer's own PR while reporting
+green.
 
 Iterate on review *judgment* in `.claude/skills/ci-review-pr/SKILL.md`, not in
 the workflow: `claude-code-action` skips any run whose workflow file differs

@@ -37,6 +37,7 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           BASE: ${{ github.event.pull_request.base.ref }}
           ASSOC: ${{ github.event.pull_request.author_association }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
           # pipefail: every gh-api-into-jq pipe below otherwise reports jq's
           # exit code, so a transient API failure yields empty output and the
@@ -49,19 +50,38 @@ jobs:
           # and Bash in its allowlist, and its entire job is to ingest
           # attacker-controlled text — the diff, the PR body, commit subjects.
           # So only PRs from people who already have write access are reviewed.
-          # Mirrors the gate claude.yml puts on its @claude trigger (a697ae6).
+          #
+          # The load-bearing test is the head repo, not author_association:
+          # pushing a branch to this repository already requires write access,
+          # so a same-repo PR is by construction from someone trusted. That
+          # matters because author_association is not dependable here — PR #8
+          # reported CONTRIBUTOR for an org member whose comment on PR #6
+          # reported MEMBER, and an assoc-only gate skipped a maintainer's own
+          # PR (green, reviewing nothing — the exact silent no-op this whole
+          # workflow exists to prevent).
+          #
+          # The assoc check stays as a second chance for a collaborator working
+          # from a fork. Such a run can't reach the model anyway (fork PRs get
+          # no secrets), but widening here costs nothing and keeps this aligned
+          # with the gate claude.yml puts on its @claude trigger (a697ae6).
+          #
           # Skips green rather than failing: a stranger's PR is a normal event,
           # not a broken build. The assert step below is gated on run=true, so
           # it does not then demand a review that was deliberately skipped.
-          case "$ASSOC" in
-            OWNER|MEMBER|COLLABORATOR) ;;
-            *)
-              echo "run=false" >> "$GITHUB_OUTPUT"
-              echo "Skipping: PR author association '$ASSOC' is not OWNER/MEMBER/COLLABORATOR."
-              echo "A maintainer can review manually, or re-open the PR from a branch in this repo."
-              exit 0
-              ;;
-          esac
+          trusted=false
+          if [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
+            trusted=true
+          else
+            case "$ASSOC" in
+              OWNER|MEMBER|COLLABORATOR) trusted=true ;;
+            esac
+          fi
+          if [ "$trusted" != "true" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping: PR head '$HEAD_REPO' is a fork and author association '$ASSOC' is not OWNER/MEMBER/COLLABORATOR."
+            echo "A maintainer can review manually, or re-open the PR from a branch in this repo."
+            exit 0
+          fi
 
           # Approval ends the review: an approved PR costs nothing per push.
           # Re-opening review after approval is a deliberate act — a human
