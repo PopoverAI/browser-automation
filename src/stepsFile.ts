@@ -81,6 +81,12 @@ const StepSchema = z.strictObject({
 
 export const StepsFileSchema = z
   .strictObject({
+    $schema: z
+      .string()
+      .optional()
+      .describe(
+        "Optional JSON Schema reference; ignored. `browser-demo schema` prints the schema.",
+      ),
     url: z
       .string()
       .optional()

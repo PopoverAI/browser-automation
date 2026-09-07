@@ -64,6 +64,15 @@ describe("steps file", () => {
     ).toBe(false);
   });
 
+  it("accepts a $schema reference alongside strictness", () => {
+    expect(
+      StepsFileSchema.safeParse({
+        $schema: "https://example.com/steps.schema.json",
+        steps: [{ narrate: "x", commands: [["wait", "1"]] }],
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects openArgs without a url, since open never runs", () => {
     const r = StepsFileSchema.safeParse({
       openArgs: ["--headers", "{}"],
@@ -97,7 +106,7 @@ describe("steps file", () => {
     expect(schema.$schema).toContain("2020-12");
     expect(schema.required).toEqual(["steps"]);
     expect(Object.keys(schema.properties).sort()).toEqual(
-      ["openArgs", "speech", "steps", "url"].sort(),
+      ["$schema", "openArgs", "speech", "steps", "url"].sort(),
     );
     // Descriptions are what an agent reads; make sure they survive generation.
     expect(schema.properties.speech.description).toMatch(/openai/);

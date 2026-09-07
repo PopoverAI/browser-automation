@@ -286,6 +286,15 @@ export async function attachAgentBrowserDemoRecorder(
       await stop();
     },
     async render(opts = {}) {
+      // A drop during or after the final step has no later step() to trip
+      // the check — so check here too, before rendering a frozen video.
+      if (streamFailure) {
+        await stop();
+        throw new Error(
+          `AgentBrowserDemoRecorder.render: cannot render — ${streamFailure.message}`,
+          { cause: streamFailure },
+        );
+      }
       await stop();
       if (entries.length === 0) {
         throw new Error(

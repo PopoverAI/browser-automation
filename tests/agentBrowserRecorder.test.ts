@@ -423,6 +423,41 @@ describe("attachAgentBrowserDemoRecorder", () => {
     await stream.start();
   });
 
+  it("refuses to render after the stream dropped following the final step", async () => {
+    const { exec } = makeFakeExec(stream);
+    const demo = await attachAgentBrowserDemoRecorder({
+      client: new AgentBrowserClient({ exec }),
+      trailingDelay: 0,
+    });
+    await until(() => stream.clientCount === 1);
+    stream.frame("a");
+    await until(() => demo.timeline().frames.length === 1);
+    await demo.step([["wait", "1"]], "only step");
+    await stream.stop(); // daemon dies after the last step, before render()
+    await until(() => stream.clientCount === 0);
+    await new Promise((r) => setTimeout(r, 20));
+    await expect(demo.render()).rejects.toThrow(/stream closed mid-run/);
+    stream = new FakeStream();
+    await stream.start();
+  });
+
+  it("renders normally when the caller stopped the recorder before render()", async () => {
+    // stop() closes the socket deliberately; that close must not be mistaken
+    // for a mid-run drop.
+    const { exec } = makeFakeExec(stream);
+    const demo = await attachAgentBrowserDemoRecorder({
+      client: new AgentBrowserClient({ exec }),
+      trailingDelay: 0,
+    });
+    await until(() => stream.clientCount === 1);
+    await demo.step([["wait", "1"]], "n");
+    await demo.stop();
+    await until(() => stream.clientCount === 0);
+    await new Promise((r) => setTimeout(r, 20));
+    // No frames were ever captured, so render fails for *that* reason, not a stream failure.
+    await expect(demo.render()).rejects.toThrow(/no frames available/);
+  });
+
   it("appends maxFps to the stream URL when set", async () => {
     const seen: string[] = [];
     const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });
