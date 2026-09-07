@@ -4,6 +4,10 @@ node_modules/
 # Build output
 dist/
 
+# Node compile cache — pnpm 10 sets NODE_COMPILE_CACHE, so any install
+# or script run drops a version-keyed cache dir here.
+node-compile-cache/
+
 # Environment
 .env
 .env.local
