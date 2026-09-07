@@ -11,6 +11,7 @@ export {
   attachAgentBrowserDemoRecorder,
   DemoStepError,
   formatCommands,
+  stepFailureHints,
 } from "./agentBrowserRecorder.js";
 export type {
   AgentBrowserDemoRecorder,
@@ -51,3 +52,13 @@ export {
   parseSpeechSpec,
 } from "./speechProviders.js";
 export type { ModuleImporter, SpeechSpec } from "./speechProviders.js";
+
+export {
+  exampleStepsFile,
+  parseStepsFile,
+  parseStepsFileText,
+  StepsFileError,
+  stepsFileJsonSchema,
+  StepsFileSchema,
+} from "./stepsFile.js";
+export type { Step, StepsFile } from "./stepsFile.js";

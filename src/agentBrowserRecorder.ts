@@ -304,3 +304,24 @@ function openSocket(url: string, timeoutMs: number): Promise<WebSocket> {
     });
   });
 }
+
+/** Hints an agent can act on, derived from how a step failed. */
+export function stepFailureHints(err: DemoStepError): string[] {
+  const hints: string[] = [];
+  const failed = err.results.find((r) => !r.success);
+  const selector = failed?.command[1] ?? "";
+  if (/^text=/.test(selector)) {
+    hints.push(
+      'agent-browser has no `text=` selector syntax — use ["find", "text", "<label>", "click"].',
+    );
+  }
+  if (/not found/i.test(err.message)) {
+    hints.push(
+      "Re-run `agent-browser snapshot -i` at this point in the flow and take the selector or @ref from there.",
+    );
+  }
+  hints.push(
+    "The page is now off-script: fix this step, then re-run the whole file (steps after it did not run).",
+  );
+  return hints;
+}

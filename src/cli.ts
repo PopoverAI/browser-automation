@@ -1,38 +1,35 @@
-#!/usr/bin/env node
 /**
  * browser-demo — record a narrated demo video by driving agent-browser.
  *
- *   browser-demo steps.json --out ./demo
+ *   browser-demo guide             the agent-facing guide (SKILL.md)
+ *   browser-demo schema            JSON Schema for the steps file
+ *   browser-demo example           a starter steps file
+ *   browser-demo validate FILE     check a steps file without recording
+ *   browser-demo record FILE       record; `browser-demo FILE` is the same
  *
- * The steps file is a JSON document:
- *
- *   {
- *     "url": "https://app.example.com",          // optional: opened before recording
- *     "openArgs": ["--headers", "{...}"],        // optional: extra args for `open`
- *     "speech": { "provider": "elevenlabs", "model": "eleven_v3", "voice": "..." }, // optional
- *     "steps": [
- *       { "narrate": "Sign in with the demo account.",
- *         "commands": [["fill", "#email", "demo@example.com"], ["click", "text=Sign in"], ["wait", "--load", "networkidle"]] }
- *     ]
- *   }
- *
- * Each step runs as one `agent-browser batch --bail` and becomes one narrated
- * segment. The daemon owns the browser: point it at a cloud provider with
- * `agent-browser -p browserbase open ...` (or `--cdp <wsUrl>`) beforehand and
- * pass the same `--session` here.
+ * The steps file is defined in ./stepsFile.ts; the guide lives in SKILL.md
+ * at the package root so it ships with, and matches, this binary.
  */
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { program } from "commander";
-import { z } from "zod";
 
 import { AgentBrowserClient } from "./agentBrowserClient.js";
 import {
   attachAgentBrowserDemoRecorder,
   DemoStepError,
+  stepFailureHints,
 } from "./agentBrowserRecorder.js";
 import type { SpeechOptions } from "./speech.js";
+import {
+  exampleStepsFile,
+  parseStepsFile,
+  StepsFileError,
+  stepsFileJsonSchema,
+  type StepsFile,
+} from "./stepsFile.js";
 import {
   assertSpeechCredentials,
   DEFAULT_OPENAI_VOICE,
@@ -41,37 +38,6 @@ import {
   parseSpeechSpec,
   type SpeechSpec,
 } from "./speechProviders.js";
-
-const SpeechOverridesSchema = z.object({
-  voice: z.string().optional(),
-  instructions: z.string().optional(),
-  speed: z.number().positive().optional(),
-  language: z.string().optional(),
-});
-
-const SpeechSchema = SpeechOverridesSchema.extend({
-  /** AI SDK provider package name, e.g. "openai", "elevenlabs". */
-  provider: z.string().min(1).optional(),
-  model: z.string().min(1).optional(),
-  outputFormat: z.string().optional(),
-  providerOptions: z.record(z.record(z.unknown())).optional(),
-});
-
-const StepSchema = z.object({
-  narrate: z.string().min(1),
-  commands: z.array(z.array(z.string()).min(1)).min(1),
-  trailingDelay: z.number().int().nonnegative().optional(),
-  speech: SpeechOverridesSchema.optional(),
-});
-
-const StepsFileSchema = z.object({
-  url: z.string().optional(),
-  openArgs: z.array(z.string()).optional(),
-  speech: SpeechSchema.optional(),
-  steps: z.array(StepSchema).min(1),
-});
-
-export type StepsFile = z.infer<typeof StepsFileSchema>;
 
 interface CliOptions {
   out?: string;
@@ -89,25 +55,6 @@ interface CliOptions {
 
 function log(msg: string): void {
   process.stderr.write(`[browser-demo] ${msg}\n`);
-}
-
-export function parseStepsFile(path: string): StepsFile {
-  const raw = readFileSync(path, "utf8");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(
-      `${path}: not valid JSON (${err instanceof Error ? err.message : String(err)})`,
-    );
-  }
-  const result = StepsFileSchema.safeParse(parsed);
-  if (!result.success) {
-    throw new Error(
-      `${path}: ${result.error.issues.map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`).join("; ")}`,
-    );
-  }
-  return result.data;
 }
 
 async function main(file: string, opts: CliOptions): Promise<void> {
@@ -157,6 +104,7 @@ async function main(file: string, opts: CliOptions): Promise<void> {
           `  ${r.success ? "ok " : "ERR"} ${r.command.join(" ")}${r.error ? ` — ${r.error}` : ""}`,
         );
       }
+      for (const hint of stepFailureHints(err)) log(`  hint: ${hint}`);
     }
     throw err;
   }
@@ -240,40 +188,125 @@ export async function resolveSpeech(
   return speech;
 }
 
+const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+function readGuide(): string {
+  return readFileSync(join(PACKAGE_ROOT, "SKILL.md"), "utf8");
+}
+
+const recordOptions = (cmd: typeof program) =>
+  cmd
+    .option("-o, --out <dir>", "output directory (default: a unique temp dir)")
+    .option(
+      "--tts <provider[:model]>",
+      'narration provider, e.g. "elevenlabs:eleven_v3" (default: openai:gpt-4o-mini-tts)',
+    )
+    .option("--voice <voice>", "voice id for the narration provider")
+    .option("--silent", "render a silent audio track (no key needed)")
+    .option("--keep", "keep per-segment intermediates next to final.mp4")
+    .option("--session <name>", "agent-browser --session to drive")
+    .option(
+      "--agent-browser <cmd>",
+      'command used to invoke agent-browser (default: "npx agent-browser")',
+    )
+    .option(
+      "--trailing-delay <ms>",
+      "delay after each step before closing its segment (default 1000)",
+    )
+    .option(
+      "--max-fps <n>",
+      "cap the frame rate requested from the stream (default: uncapped)",
+    )
+    .option("--ffmpeg <path>", "ffmpeg binary (default: ffmpeg-static)")
+    .option("--json", "print the result summary as JSON on stdout");
+
+function fail(err: unknown): void {
+  log(err instanceof Error ? err.message : String(err));
+  process.exitCode = 1;
+}
+
 program
   .name("browser-demo")
   .description("Record a narrated demo video by driving agent-browser")
-  .argument("<steps.json>", "steps file (see header comment for the schema)")
-  .option("-o, --out <dir>", "output directory (default: a unique temp dir)")
-  .option(
-    "--tts <provider[:model]>",
-    'narration provider, e.g. "elevenlabs:eleven_v3" (default: openai:gpt-4o-mini-tts)',
+  .addHelpText(
+    "before",
+    `Start here (for AI agents):
+  browser-demo guide           Workflow, steps-file format, commands that work, how to read failures
+  browser-demo schema          JSON Schema for the steps file
+  browser-demo example         A starter steps file to edit
+  browser-demo validate FILE   Check a steps file without touching a browser
+
+Typical run:
+  agent-browser open https://app.example.com && agent-browser snapshot -i   # explore
+  browser-demo validate steps.json
+  browser-demo record steps.json --silent --out ./demo                       # dry run, no key
+  OPENAI_API_KEY=... browser-demo record steps.json --out ./demo             # narrated
+`,
   )
-  .option("--voice <voice>", "voice id for the narration provider")
-  .option("--silent", "render a silent audio track (no key needed)")
-  .option("--keep", "keep per-segment intermediates next to final.mp4")
-  .option("--session <name>", "agent-browser --session to drive")
-  .option(
-    "--agent-browser <cmd>",
-    'command used to invoke agent-browser (default: "npx agent-browser")',
-  )
-  .option(
-    "--trailing-delay <ms>",
-    "delay after each step before closing its segment (default 1000)",
-  )
-  .option(
-    "--max-fps <n>",
-    "cap the frame rate requested from the stream (default: uncapped)",
-  )
-  .option("--ffmpeg <path>", "ffmpeg binary (default: ffmpeg-static)")
-  .option("--json", "print the result summary as JSON on stdout")
-  .action(async (file: string, opts: CliOptions) => {
+  .showHelpAfterError("(run `browser-demo guide` for the full workflow)");
+
+recordOptions(
+  program
+    .command("record", { isDefault: true })
+    .description("record steps.json to an mp4 (default command)")
+    .argument(
+      "<steps.json>",
+      "steps file — `browser-demo schema` / `browser-demo example` describe it",
+    ),
+).action(async (file: string, opts: CliOptions) => {
+  try {
+    await main(file, opts);
+  } catch (err) {
+    fail(err);
+  }
+});
+
+program
+  .command("validate")
+  .description("parse and validate a steps file; exits non-zero on problems")
+  .argument("<steps.json>")
+  .action((file: string) => {
     try {
-      await main(file, opts);
+      const steps = parseStepsFile(resolve(file));
+      const provider = steps.speech?.provider ?? "openai";
+      process.stdout.write(
+        `${file}: ok — ${steps.steps.length} step(s), ${steps.url ? `opens ${steps.url}` : "records the daemon's current page"}, narration via ${provider}${steps.speech?.model ? `:${steps.speech.model}` : ""}\n`,
+      );
     } catch (err) {
-      log(err instanceof Error ? err.message : String(err));
-      process.exitCode = 1;
+      fail(err instanceof StepsFileError ? err.message : err);
     }
   });
 
-program.parseAsync(process.argv);
+program
+  .command("guide")
+  .description("print the agent-facing guide (SKILL.md)")
+  .action(() => {
+    process.stdout.write(readGuide());
+  });
+
+program
+  .command("schema")
+  .description("print the steps file JSON Schema (draft 2020-12)")
+  .action(() => {
+    process.stdout.write(JSON.stringify(stepsFileJsonSchema(), null, 2) + "\n");
+  });
+
+program
+  .command("example")
+  .description("print a starter steps file")
+  .action(() => {
+    process.stdout.write(JSON.stringify(exampleStepsFile(), null, 2) + "\n");
+  });
+
+// Agents pipe help and guides into `head`; a closed pipe is not an error.
+process.stdout.on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EPIPE") process.exit(0);
+  throw err;
+});
+
+// A bare `browser-demo` should orient, not complain about a missing argument.
+if (process.argv.length <= 2) {
+  program.outputHelp();
+} else {
+  program.parseAsync(process.argv);
+}

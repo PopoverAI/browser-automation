@@ -34,6 +34,19 @@ OPENAI_API_KEY=... npx browser-demo steps.json --out ./demo
 
 `--silent` renders the same video with a silent audio track sized to the narration, so you can iterate on the steps without any key.
 
+## For agents
+
+The binary documents itself, so an agent can be told "use browser-demo" and work the rest out:
+
+```
+browser-demo guide           # the full workflow guide (SKILL.md), version-matched to the binary
+browser-demo schema          # JSON Schema for the steps file
+browser-demo example         # a starter steps file
+browser-demo validate FILE   # check a file without opening a browser
+```
+
+`browser-demo --help` opens with those, and a failed step prints hints (wrong selector syntax, re-snapshot here, later steps didn't run). [SKILL.md](SKILL.md) is the same guide for agents reading the repo.
+
 ## Steps file
 
 ```jsonc

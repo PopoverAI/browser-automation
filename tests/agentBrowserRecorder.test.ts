@@ -11,6 +11,7 @@ import {
   attachAgentBrowserDemoRecorder,
   DemoStepError,
   formatCommands,
+  stepFailureHints,
 } from "../src/agentBrowserRecorder.js";
 
 /**
@@ -397,5 +398,29 @@ describe("attachAgentBrowserDemoRecorder", () => {
       trailingDelay: 0,
     });
     await expect(demo.render()).rejects.toThrow(/no steps were recorded/);
+  });
+});
+
+describe("stepFailureHints", () => {
+  const err = (command: string[], error: string) =>
+    new DemoStepError(
+      `demo step failed at \`${command.join(" ")}\`: ${error}`,
+      [command],
+      [{ command, success: false, result: null, error }],
+    );
+
+  it("calls out the text= selector mistake and points at snapshot -i", () => {
+    const hints = stepFailureHints(
+      err(["click", "text=Sign in"], "Element not found"),
+    );
+    expect(hints.join("\n")).toMatch(/find", "text"/);
+    expect(hints.join("\n")).toMatch(/snapshot -i/);
+    expect(hints.at(-1)).toMatch(/off-script/);
+  });
+
+  it("always explains that later steps did not run", () => {
+    const hints = stepFailureHints(err(["wait", "--text", "x"], "timeout"));
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toMatch(/did not run/);
   });
 });
