@@ -1,0 +1,14 @@
+{
+  // Typecheck-only config: the build's tsconfig.json is scoped to src/ (it
+  // sets rootDir there and emits declarations), so it never sees tests/.
+  // vitest transpiles tests without typechecking them, which left a type
+  // error in a test file able to pass CI entirely. This widens the net for
+  // `tsc --noEmit` without touching what `pnpm build` emits.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

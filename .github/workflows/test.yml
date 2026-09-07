@@ -1,0 +1,68 @@
+name: test
+
+on:
+  # PR-only by design, matching dotrequirements: we don't gate merges on CI, so
+  # a per-merge re-run on main buys only faster detection of stale-base
+  # breakage — already surfaced by the next PR's merge-into-main run.
+  pull_request:
+
+# Cancel a PR's in-flight run when a newer commit is pushed to the same branch.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vitest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        # 22, matching the runtime this package actually ships on: the
+        # Dockerfile builds on node:22-alpine and runs on
+        # distroless/nodejs22-debian12. (dotrequirements pins 24 for Vercel;
+        # that reason doesn't apply here.)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        # HUSKY=0 stops the `prepare` script installing git hooks onto a
+        # throwaway runner. `prepare` still runs `pnpm build` after it, so the
+        # package is compiled here as a side effect.
+        env:
+          HUSKY: 0
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        # tsconfig.typecheck.json, not the bare tsconfig.json: the build config
+        # is scoped to src/ (rootDir + declaration emit), and vitest transpiles
+        # tests without typechecking them — so a plain `tsc --noEmit` here
+        # checked no test file at all, and a type error in tests/ passed CI.
+        # Verified by injecting one and watching it sail through. Found by
+        # Codex on PR #8.
+        run: pnpm run typecheck
+
+      - name: Run tests
+        run: pnpm test
+
+  # Deliberately absent: a lint job.
+  #
+  # `pnpm lint` currently fails on main with 4 pre-existing errors — one unused
+  # import in src/sessionManager.ts and three no-explicit-any hits in
+  # src/sessionManager.ts and src/tools/navigate.ts, all on genuinely untyped
+  # third-party internals (Stagehand's `mainSession`, a Playwright context).
+  # Wiring lint up now would paint every PR red on arrival, which trains
+  # everyone to ignore red — the same failure, inverted, as the review workflow
+  # this repo just replaced, which ran green for four months while posting
+  # nothing. Fix the four, then add the job in the same change.
