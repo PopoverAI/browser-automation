@@ -32,7 +32,7 @@ OPENAI_API_KEY=... npx browser-demo steps.json --out ./demo
 #   → ./demo/final.mp4
 ```
 
-`--silent` renders the same video with a silent audio track sized to the narration, so you can iterate on the steps without an OpenAI key.
+`--silent` renders the same video with a silent audio track sized to the narration, so you can iterate on the steps without any key.
 
 ## Steps file
 
@@ -40,6 +40,14 @@ OPENAI_API_KEY=... npx browser-demo steps.json --out ./demo
 {
   "url": "https://app.example.com", // optional — `open`ed before recording
   "openArgs": ["--headers", "{\"x-vercel-protection-bypass\": \"...\"}"], // optional extra args for `open`
+  "speech": {
+    // optional — narration; default is openai:gpt-4o-mini-tts, voice "alloy"
+    "provider": "elevenlabs",
+    "model": "eleven_v3",
+    "voice": "JBFqnCBsd6RMkjVDRZzb",
+    "instructions": "Warm and unhurried.",
+    "providerOptions": { "elevenlabs": { "stability": 0.4 } },
+  },
   "steps": [
     {
       "narrate": "What is said over this step.",
@@ -48,6 +56,7 @@ OPENAI_API_KEY=... npx browser-demo steps.json --out ./demo
         ["wait", "300"],
       ], // agent-browser argv arrays
       "trailingDelay": 1000, // optional, ms (default 1000)
+      "speech": { "voice": "..." }, // optional per-step override (voice, instructions, speed, language)
     },
   ],
 }
@@ -63,8 +72,9 @@ OPENAI_API_KEY=... npx browser-demo steps.json --out ./demo
 ```
 browser-demo <steps.json>
   -o, --out <dir>            output directory (default: a unique temp dir)
-  --silent                   silent audio track instead of OpenAI TTS
-  --voice <voice>            OpenAI TTS voice (default: alloy)
+  --tts <provider[:model]>   narration provider (default: openai:gpt-4o-mini-tts)
+  --voice <voice>            voice id for the narration provider
+  --silent                   silent audio track; no key needed
   --keep                     keep per-segment audio/mp4/frames next to final.mp4
   --session <name>           agent-browser --session to drive
   --agent-browser "<cmd>"    how to invoke agent-browser (default: "npx agent-browser")
@@ -75,6 +85,26 @@ browser-demo <steps.json>
 ```
 
 Without `--json`, the path to `final.mp4` is printed on stdout and progress goes to stderr.
+
+## Narration
+
+Narration goes through the [AI SDK](https://ai-sdk.dev)'s `generateSpeech`, so any AI SDK speech provider works. Five ship with the CLI: **openai** (default), **elevenlabs**, **lmnt**, **hume**, **deepgram**. Each reads its key from its own env var.
+
+| provider   | `--tts`                                                     | key                  | model examples                   |
+| ---------- | ----------------------------------------------------------- | -------------------- | -------------------------------- |
+| OpenAI     | `openai[:model]` (default `gpt-4o-mini-tts`, voice `alloy`) | `OPENAI_API_KEY`     | `gpt-4o-mini-tts`, `tts-1-hd`    |
+| ElevenLabs | `elevenlabs[:model]` (default `eleven_multilingual_v2`)     | `ELEVENLABS_API_KEY` | `eleven_v3`, `eleven_flash_v2_5` |
+| LMNT       | `lmnt[:model]` (default `aurora`)                           | `LMNT_API_KEY`       | `aurora`, `blizzard`             |
+| Hume       | `hume`                                                      | `HUME_API_KEY`       | (single model)                   |
+| Deepgram   | `deepgram[:model]` (default `aura-2`)                       | `DEEPGRAM_API_KEY`   | `aura`, `aura-2`                 |
+
+Where the configuration lives:
+
+- **Voice, instructions, speed, language, provider options** belong in the steps file's `speech` block — they're part of the demo's content, and voice ids are provider-specific so the model goes with them. A step's own `speech` block overrides voice/instructions/speed/language for that step only.
+- **Credentials** stay in the environment, using each provider package's convention. The CLI checks for the key up front and fails before opening the browser if it's missing.
+- **Flags** are one-off overrides: `--tts elevenlabs:eleven_v3 --voice <id>`, or `--silent`. Precedence is flags → steps file → default.
+
+Any other AI SDK provider resolves the same way: `--tts acme:model` imports `@ai-sdk/acme`, preferring the copy installed in the current project, so `npm i @ai-sdk/acme` (or `npx -p @ai-sdk/acme -p @popoverai/browser-automation browser-demo …`) is all it takes.
 
 ## Cloud browsers
 
@@ -96,6 +126,7 @@ A remote browser adds one round-trip of latency to each frame; segment boundarie
 ## Programmatic API
 
 ```ts
+import { elevenlabs } from "@ai-sdk/elevenlabs";
 import {
   AgentBrowserClient,
   attachAgentBrowserDemoRecorder,
@@ -113,22 +144,26 @@ try {
     ],
     "Signing in.",
   );
-  const { videoPath } = await demo.render({ outputDir: "./out" });
+  const { videoPath } = await demo.render({
+    outputDir: "./out",
+    speech: { model: elevenlabs.speech("eleven_v3"), voice: "<voiceId>" }, // omit for a silent track
+  });
 } finally {
   await demo.stop(); // idempotent; safe before, after, or instead of render()
 }
 ```
 
-| Export                                                       | Purpose                                                                                |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `attachAgentBrowserDemoRecorder(opts)`                       | Enable the daemon's stream, connect, return a recorder.                                |
-| `demo.step(commands, narrate, opts?)`                        | Run one batch, record one narrated segment. Throws `DemoStepError` on failure.         |
-| `demo.timeline()`                                            | Read the captured `{ entries, frames }` without rendering.                             |
-| `demo.render(opts?)`                                         | Stop capturing, run TTS + ffmpeg, return `{ videoPath, outputDir, timeline, frames }`. |
-| `demo.stop()`                                                | Close the stream without rendering.                                                    |
-| `AgentBrowserClient`                                         | Thin spawn-based wrapper over the CLI (`run`, `runJson`, `batch`, `ensureStream`).     |
-| `renderTimeline({ timeline, frames, tts?, ffmpegPath?, … })` | The render pipeline on its own, for frames captured some other way.                    |
-| `createOpenAITTS()` / `createSilentTTS()`                    | TTS providers; anything with `speak(text, voice)` works.                               |
+| Export                                                          | Purpose                                                                                                                                                                                                                                                                              |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `attachAgentBrowserDemoRecorder(opts)`                          | Enable the daemon's stream, connect, return a recorder.                                                                                                                                                                                                                              |
+| `demo.step(commands, narrate, opts?)`                           | Run one batch, record one narrated segment. Throws `DemoStepError` on failure.                                                                                                                                                                                                       |
+| `demo.timeline()`                                               | Read the captured `{ entries, frames }` without rendering.                                                                                                                                                                                                                           |
+| `demo.render({ speech?, outputDir?, … })`                       | Stop capturing, narrate + encode, return `{ videoPath, outputDir, timeline, frames }`.                                                                                                                                                                                               |
+| `demo.stop()`                                                   | Close the stream without rendering.                                                                                                                                                                                                                                                  |
+| `AgentBrowserClient`                                            | Thin spawn-based wrapper over the CLI (`run`, `runJson`, `batch`, `ensureStream`).                                                                                                                                                                                                   |
+| `renderTimeline({ timeline, frames, speech?, ffmpegPath?, … })` | The render pipeline on its own, for frames captured some other way.                                                                                                                                                                                                                  |
+| `SpeechOptions`                                                 | `generateSpeech`'s options minus `text`: `{ model: SpeechModel, voice?, instructions?, speed?, language?, outputFormat?, providerOptions? }`. A hand-rolled `SpeechModelV4` (`{ specificationVersion, provider, modelId, doGenerate }`) works for backends the AI SDK doesn't cover. |
+| `loadSpeechModel({ provider, model })`                          | The CLI's `--tts` resolution, for reuse.                                                                                                                                                                                                                                             |
 
 ## How it captures
 
@@ -142,13 +177,14 @@ Segment length is `max(video, audio)`: the last frame is held until the narratio
 
 - **agent-browser** is resolved with `npx` by default; no global install needed. Its `engines` asks for Node ≥ 24 (it runs on 22 with a warning). Chrome is found automatically or via `agent-browser install` / `open --executable-path`.
 - **ffmpeg.** `ffmpeg-static` downloads a binary at install time; pnpm 10 blocks that until you run `pnpm approve-builds`. Otherwise pass `--ffmpeg <path>` or set `FFMPEG_BIN`. Needs libx264 + aac (any standard build).
-- **Narration** uses OpenAI `gpt-4o-mini-tts` via `OPENAI_API_KEY`; `--silent` needs no key.
+- **Narration** needs a key for whichever provider you pick (see [Narration](#narration)); `--silent` needs none.
 - **Selectors.** `text=…` isn't a selector syntax agent-browser accepts; use `find text <value> click` or refs from `snapshot -i`.
 
 ## Environment variables
 
 ```
-OPENAI_API_KEY=...        # narration (not needed with --silent)
+OPENAI_API_KEY=...        # narration with the default provider (not needed with --silent)
+ELEVENLABS_API_KEY=...    # or LMNT_API_KEY, HUME_API_KEY, DEEPGRAM_API_KEY, per --tts
 FFMPEG_BIN=...            # override the ffmpeg binary
 # plus whatever agent-browser needs for your provider:
 # BROWSERBASE_API_KEY, KERNEL_API_KEY, BROWSERLESS_API_KEY, AWS_* (agentcore), …

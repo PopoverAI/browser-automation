@@ -9,6 +9,7 @@
  *   {
  *     "url": "https://app.example.com",          // optional: opened before recording
  *     "openArgs": ["--headers", "{...}"],        // optional: extra args for `open`
+ *     "speech": { "provider": "elevenlabs", "model": "eleven_v3", "voice": "..." }, // optional
  *     "steps": [
  *       { "narrate": "Sign in with the demo account.",
  *         "commands": [["fill", "#email", "demo@example.com"], ["click", "text=Sign in"], ["wait", "--load", "networkidle"]] }
@@ -31,17 +32,42 @@ import {
   attachAgentBrowserDemoRecorder,
   DemoStepError,
 } from "./agentBrowserRecorder.js";
-import { createOpenAITTS, createSilentTTS, type TTSProvider } from "./tts.js";
+import type { SpeechOptions } from "./speech.js";
+import {
+  assertSpeechCredentials,
+  DEFAULT_OPENAI_VOICE,
+  DEFAULT_SPEECH_SPEC,
+  loadSpeechModel,
+  parseSpeechSpec,
+  type SpeechSpec,
+} from "./speechProviders.js";
+
+const SpeechOverridesSchema = z.object({
+  voice: z.string().optional(),
+  instructions: z.string().optional(),
+  speed: z.number().positive().optional(),
+  language: z.string().optional(),
+});
+
+const SpeechSchema = SpeechOverridesSchema.extend({
+  /** AI SDK provider package name, e.g. "openai", "elevenlabs". */
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  outputFormat: z.string().optional(),
+  providerOptions: z.record(z.record(z.unknown())).optional(),
+});
 
 const StepSchema = z.object({
   narrate: z.string().min(1),
   commands: z.array(z.array(z.string()).min(1)).min(1),
   trailingDelay: z.number().int().nonnegative().optional(),
+  speech: SpeechOverridesSchema.optional(),
 });
 
 const StepsFileSchema = z.object({
   url: z.string().optional(),
   openArgs: z.array(z.string()).optional(),
+  speech: SpeechSchema.optional(),
   steps: z.array(StepSchema).min(1),
 });
 
@@ -49,6 +75,7 @@ export type StepsFile = z.infer<typeof StepsFileSchema>;
 
 interface CliOptions {
   out?: string;
+  tts?: string;
   voice?: string;
   keep?: boolean;
   session?: string;
@@ -91,6 +118,10 @@ async function main(file: string, opts: CliOptions): Promise<void> {
     session: opts.session,
   });
 
+  // Resolve narration before touching the browser so a missing key or
+  // provider fails in the first second, not after the recording.
+  const speech = opts.silent ? undefined : await resolveSpeech(steps, opts);
+
   if (steps.url) {
     log(`open ${steps.url}`);
     const r = await client.run(["open", steps.url, ...(steps.openArgs ?? [])], {
@@ -101,17 +132,6 @@ async function main(file: string, opts: CliOptions): Promise<void> {
         `agent-browser open failed (exit ${r.status}): ${r.stderr || r.stdout}`,
       );
     }
-  }
-
-  let tts: TTSProvider | undefined;
-  if (opts.silent) {
-    tts = createSilentTTS({ ffmpegPath: opts.ffmpeg });
-  } else if (!process.env.OPENAI_API_KEY) {
-    throw new Error(
-      "OPENAI_API_KEY is not set. Set it for narration, or pass --silent to render without a voice track.",
-    );
-  } else {
-    tts = createOpenAITTS();
   }
 
   const demo = await attachAgentBrowserDemoRecorder({
@@ -126,6 +146,7 @@ async function main(file: string, opts: CliOptions): Promise<void> {
       log(`step ${i + 1}/${steps.steps.length}: ${s.narrate}`);
       await demo.step(s.commands, s.narrate, {
         trailingDelay: s.trailingDelay,
+        speech: s.speech,
       });
     }
   } catch (err) {
@@ -143,9 +164,8 @@ async function main(file: string, opts: CliOptions): Promise<void> {
   log("rendering…");
   const result = await demo.render({
     outputDir: opts.out ? resolve(opts.out) : undefined,
-    voice: opts.voice,
     keepIntermediates: opts.keep,
-    tts,
+    speech,
     ffmpegPath: opts.ffmpeg,
   });
 
@@ -172,13 +192,65 @@ async function main(file: string, opts: CliOptions): Promise<void> {
   }
 }
 
+/**
+ * Precedence: --tts / --voice flags → the steps file's `speech` block →
+ * OpenAI gpt-4o-mini-tts with voice "alloy". Credentials come from the
+ * provider package's own env var (OPENAI_API_KEY, ELEVENLABS_API_KEY, …).
+ */
+export async function resolveSpeech(
+  steps: StepsFile,
+  opts: Pick<CliOptions, "tts" | "voice">,
+  deps: { loadModel?: typeof loadSpeechModel; env?: NodeJS.ProcessEnv } = {},
+): Promise<SpeechOptions> {
+  const file = steps.speech ?? {};
+  let spec: SpeechSpec;
+  if (opts.tts) {
+    spec = parseSpeechSpec(opts.tts);
+  } else if (file.provider) {
+    spec = { provider: file.provider.toLowerCase(), model: file.model };
+  } else {
+    spec = DEFAULT_SPEECH_SPEC;
+  }
+  assertSpeechCredentials(spec, deps.env);
+
+  const model = await (deps.loadModel ?? loadSpeechModel)(spec);
+  // Flags beat the file; the file's voice only applies to its own provider.
+  const fileVoice =
+    !opts.tts || opts.tts.split(":")[0].toLowerCase() === file.provider
+      ? file.voice
+      : undefined;
+  const voice =
+    opts.voice ??
+    fileVoice ??
+    (spec.provider === "openai" ? DEFAULT_OPENAI_VOICE : undefined);
+
+  const speech: SpeechOptions = { model };
+  if (voice) speech.voice = voice;
+  if (file.instructions) speech.instructions = file.instructions;
+  if (file.speed) speech.speed = file.speed;
+  if (file.language) speech.language = file.language;
+  if (file.outputFormat) speech.outputFormat = file.outputFormat;
+  if (file.providerOptions) {
+    speech.providerOptions =
+      file.providerOptions as SpeechOptions["providerOptions"];
+  }
+  log(
+    `narration: ${spec.provider}${spec.model ? `:${spec.model}` : ""}${voice ? ` (voice ${voice})` : ""}`,
+  );
+  return speech;
+}
+
 program
   .name("browser-demo")
   .description("Record a narrated demo video by driving agent-browser")
   .argument("<steps.json>", "steps file (see header comment for the schema)")
   .option("-o, --out <dir>", "output directory (default: a unique temp dir)")
-  .option("--voice <voice>", "OpenAI TTS voice id (default: alloy)")
-  .option("--silent", "render with a silent audio track instead of OpenAI TTS")
+  .option(
+    "--tts <provider[:model]>",
+    'narration provider, e.g. "elevenlabs:eleven_v3" (default: openai:gpt-4o-mini-tts)',
+  )
+  .option("--voice <voice>", "voice id for the narration provider")
+  .option("--silent", "render a silent audio track (no key needed)")
   .option("--keep", "keep per-segment intermediates next to final.mp4")
   .option("--session <name>", "agent-browser --session to drive")
   .option(

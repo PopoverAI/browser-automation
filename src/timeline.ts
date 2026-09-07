@@ -3,6 +3,8 @@
  * and the renderer (which turns them into a narrated mp4).
  */
 
+import type { SpeechOverrides } from "./speech.js";
+
 export interface CapturedFrame {
   /**
    * Wall-clock timestamp (ms since epoch) for the frame. Stamped on receipt
@@ -29,4 +31,6 @@ export interface TimelineEntry {
   frameCount: number;
   /** (endTime - startTime) / 1000, in seconds. */
   segmentDuration: number;
+  /** Per-step narration overrides (voice, language, …) merged over the render's `speech`. */
+  speech?: SpeechOverrides;
 }

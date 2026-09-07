@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import ffmpegPath from "ffmpeg-static";
 
 import type { CapturedFrame, TimelineEntry } from "./timeline.js";
-import { createOpenAITTS, type TTSProvider } from "./tts.js";
+import { synthesize, type SpeechOptions } from "./speech.js";
 
 /**
  * Result returned by the exec test seam (and by the default `spawnSync`-based
@@ -37,12 +37,15 @@ export interface RenderTimelineOptions {
   frames: CapturedFrame[];
   /** Directory the final mp4 (and intermediates) are written to. Created if missing. */
   outputDir?: string;
-  /** TTS voice id (default `"alloy"`). Forwarded to the TTS provider verbatim. */
-  voice?: string;
-  /** TTS provider. Defaults to OpenAI gpt-4o-mini-tts via `OPENAI_API_KEY`. */
-  tts?: TTSProvider;
   /**
-   * If false (default), TTS audio + per-segment mp4s + frame PNGs are deleted
+   * Narration: an AI SDK speech model plus its options. Omit for a silent
+   * track sized to each step's narration text.
+   */
+  speech?: SpeechOptions;
+  /** Cancels in-flight speech synthesis. */
+  signal?: AbortSignal;
+  /**
+   * If false (default), narration audio + per-segment mp4s + frame PNGs are deleted
    * after the final video is concatenated. Set true to inspect intermediates.
    */
   keepIntermediates?: boolean;
@@ -61,7 +64,7 @@ export interface RenderedSegment {
   /** Path to the segment mp4 (relative to outputDir). */
   segmentVideoPath?: string;
   /** Path to the segment audio (relative to outputDir). */
-  ttsAudioPath?: string;
+  audioPath?: string;
   /** Number of frames actually included in the segment. */
   frameCount: number;
 }
@@ -72,7 +75,6 @@ export interface RenderTimelineResult {
   segments: RenderedSegment[];
 }
 
-const DEFAULT_VOICE = "alloy";
 const MIN_FRAME_DURATION = 0.1;
 const MAX_FRAME_DURATION = 10;
 /**
@@ -117,8 +119,6 @@ export async function renderTimeline(
   );
   mkdirSync(outputDir, { recursive: true });
 
-  const voice = options.voice ?? DEFAULT_VOICE;
-  const tts = options.tts ?? createOpenAITTS();
   const exec: ExecRunner = options.exec ?? defaultExec;
 
   const partial: { segments: RenderedSegment[] } = { segments: [] };
@@ -132,8 +132,8 @@ export async function renderTimeline(
           index: i,
           frames: options.frames,
           outputDir,
-          voice,
-          tts,
+          speech: options.speech,
+          signal: options.signal,
           ffmpeg,
           exec,
         }),
@@ -177,7 +177,7 @@ export async function renderTimeline(
       // After cleanup, segment paths are gone — null them out in the result.
       for (const s of segments) {
         s.segmentVideoPath = undefined;
-        s.ttsAudioPath = undefined;
+        s.audioPath = undefined;
       }
     }
 
@@ -198,14 +198,15 @@ interface SegmentInput {
   index: number;
   frames: CapturedFrame[];
   outputDir: string;
-  voice: string;
-  tts: TTSProvider;
+  speech?: SpeechOptions;
+  signal?: AbortSignal;
   ffmpeg: string;
   exec: ExecRunner;
 }
 
 async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
-  const { entry, index, frames, outputDir, voice, tts, ffmpeg, exec } = input;
+  const { entry, index, frames, outputDir, speech, signal, ffmpeg, exec } =
+    input;
 
   // Filter frames to the entry's [startTime, endTime] window.
   let segmentFrames = frames.filter(
@@ -231,10 +232,14 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
     );
   }
 
-  // 1. Generate TTS.
-  const speech = await tts.speak(entry.narrative, voice);
-  const audioPath = join(outputDir, `audio-${index}.${speech.extension}`);
-  writeFileSync(audioPath, Buffer.from(speech.audio));
+  // 1. Narrate (speech model, or silence sized to the text).
+  const narration = await synthesize(
+    entry.narrative,
+    speech && entry.speech ? { ...speech, ...entry.speech } : speech,
+    { signal },
+  );
+  const audioPath = join(outputDir, `audio-${index}.${narration.format}`);
+  writeFileSync(audioPath, Buffer.from(narration.audio));
 
   // 2. Write frames as images into a per-segment subdir (extension follows
   //    the frame's encoding so ffmpeg's image2 demuxer picks the right decoder).
@@ -343,7 +348,7 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
   return {
     entry,
     segmentVideoPath: segmentPath,
-    ttsAudioPath: audioPath,
+    audioPath: audioPath,
     frameCount: segmentFrames.length,
   };
 }
@@ -371,8 +376,8 @@ function cleanupIntermediates(
     if (s.segmentVideoPath && existsSync(s.segmentVideoPath)) {
       rmSync(s.segmentVideoPath, { force: true });
     }
-    if (s.ttsAudioPath && existsSync(s.ttsAudioPath)) {
-      rmSync(s.ttsAudioPath, { force: true });
+    if (s.audioPath && existsSync(s.audioPath)) {
+      rmSync(s.audioPath, { force: true });
     }
     const framesDir = join(outputDir, `segment-${i}-frames`);
     if (existsSync(framesDir)) {

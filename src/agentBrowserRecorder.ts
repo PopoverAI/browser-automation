@@ -5,6 +5,7 @@ import {
   type BatchCommandResult,
 } from "./agentBrowserClient.js";
 import { renderTimeline, type RenderTimelineOptions } from "./render.js";
+import type { SpeechOverrides } from "./speech.js";
 import type { CapturedFrame, TimelineEntry } from "./timeline.js";
 
 export type DemoRenderOptions = Omit<
@@ -51,6 +52,8 @@ export interface DemoStepOptions {
   trailingDelay?: number;
   /** Kill the batch and fail the step after this many ms. Default 120000. */
   timeoutMs?: number;
+  /** Narration overrides for this step only (voice, instructions, speed, language). */
+  speech?: SpeechOverrides;
 }
 
 export interface AgentBrowserDemoRecorder {
@@ -244,6 +247,7 @@ export async function attachAgentBrowserDemoRecorder(
         endTime,
         frameCount,
         segmentDuration: (endTime - startTime) / 1000,
+        ...(opts.speech ? { speech: opts.speech } : {}),
       });
       return results;
     },

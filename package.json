@@ -48,12 +48,16 @@
     ]
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.54",
-    "ai": "^6.0.169",
+    "@ai-sdk/deepgram": "^3.1.7",
+    "@ai-sdk/elevenlabs": "^3.0.37",
+    "@ai-sdk/hume": "^3.0.36",
+    "@ai-sdk/lmnt": "^3.0.36",
+    "@ai-sdk/openai": "^4.0.60",
+    "ai": "^7.0.93",
     "commander": "^14.0.0",
     "ffmpeg-static": "^5.3.0",
     "ws": "^8.18.0",
-    "zod": "^3.25.67"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.6",

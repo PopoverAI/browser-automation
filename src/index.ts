@@ -35,9 +35,19 @@ export type {
   StreamStatus,
 } from "./agentBrowserClient.js";
 
+export { estimateSpeechSeconds, silentWav, synthesize } from "./speech.js";
+export type {
+  SpeechOptions,
+  SpeechOverrides,
+  SynthesizedAudio,
+} from "./speech.js";
+
 export {
-  createOpenAITTS,
-  createSilentTTS,
-  estimateSpeechSeconds,
-} from "./tts.js";
-export type { SilentTTSOptions, TTSProvider, TTSResult } from "./tts.js";
+  assertSpeechCredentials,
+  DEFAULT_OPENAI_VOICE,
+  DEFAULT_SPEECH_SPEC,
+  KNOWN_PROVIDERS,
+  loadSpeechModel,
+  parseSpeechSpec,
+} from "./speechProviders.js";
+export type { ModuleImporter, SpeechSpec } from "./speechProviders.js";

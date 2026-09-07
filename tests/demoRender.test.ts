@@ -11,7 +11,9 @@ import { tmpdir } from "node:os";
 
 import { renderTimeline } from "../src/render.js";
 import type { ExecResult, ExecRunner } from "../src/render.js";
-import type { TTSProvider } from "../src/tts.js";
+import { MockSpeechModelV4 } from "ai/test";
+
+import type { SpeechOptions } from "../src/speech.js";
 import type { CapturedFrame, TimelineEntry } from "../src/timeline.js";
 
 function makeTimeline(): {
@@ -91,15 +93,19 @@ function makeDefaultExec(): {
 
 describe("renderTimeline", () => {
   let outputDir: string;
-  let tts: TTSProvider;
+  let doGenerate: ReturnType<typeof vi.fn>;
+  let speech: SpeechOptions;
 
   beforeEach(() => {
     outputDir = mkdtempSync(join(tmpdir(), "demo-render-test-"));
-    tts = {
-      speak: vi.fn(async (text: string) => ({
-        audio: new Uint8Array(Buffer.from(`audio-for-${text}`)),
-        extension: "mp3",
-      })),
+    doGenerate = vi.fn(async ({ text }: { text: string }) => ({
+      audio: new Uint8Array(Buffer.from(`audio-for-${text}`)),
+      warnings: [],
+      response: { timestamp: new Date(), modelId: "mock" },
+    }));
+    speech = {
+      model: new MockSpeechModelV4({ doGenerate }),
+      voice: "test-voice",
     };
   });
 
@@ -109,7 +115,7 @@ describe("renderTimeline", () => {
     }
   });
 
-  it("invokes TTS for each timeline entry", async () => {
+  it("synthesises narration for each timeline entry through the speech model", async () => {
     const { timeline, frames } = makeTimeline();
     const { exec } = makeDefaultExec();
 
@@ -117,18 +123,55 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
 
-    expect(tts.speak).toHaveBeenCalledTimes(2);
-    expect((tts.speak as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(
-      "navigating to login",
+    expect(doGenerate).toHaveBeenCalledTimes(2);
+    const texts = doGenerate.mock.calls.map(
+      (c) => (c[0] as { text: string }).text,
     );
-    expect((tts.speak as ReturnType<typeof vi.fn>).mock.calls[1][0]).toBe(
-      "submitting the form",
-    );
+    expect(texts).toEqual(["navigating to login", "submitting the form"]);
+    // Render-level options reach the model; the default output format is mp3.
+    expect(doGenerate.mock.calls[0][0]).toMatchObject({
+      voice: "test-voice",
+      outputFormat: "mp3",
+    });
+  });
+
+  it("merges per-entry speech overrides over the render's speech options", async () => {
+    const { timeline, frames } = makeTimeline();
+    const { exec } = makeDefaultExec();
+    timeline[1] = {
+      ...timeline[1],
+      speech: { voice: "other", language: "es" },
+    };
+
+    await renderTimeline({ timeline, frames, outputDir, speech, exec });
+
+    expect(doGenerate.mock.calls[0][0]).toMatchObject({ voice: "test-voice" });
+    expect(doGenerate.mock.calls[1][0]).toMatchObject({
+      voice: "other",
+      language: "es",
+    });
+  });
+
+  it("renders a silent wav track when no speech is configured", async () => {
+    const { timeline, frames } = makeTimeline();
+    const { exec } = makeDefaultExec();
+
+    const result = await renderTimeline({
+      timeline,
+      frames,
+      outputDir,
+      exec,
+      keepIntermediates: true,
+    });
+
+    const wav = readFileSync(join(outputDir, "audio-0.wav"));
+    expect(wav.subarray(0, 4).toString()).toBe("RIFF");
+    expect(result.segments[0].audioPath).toMatch(/audio-0\.wav$/);
   });
 
   it("filters frames to each entry's [startTime, endTime] window", async () => {
@@ -139,7 +182,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -168,7 +211,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -198,7 +241,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -225,7 +268,7 @@ describe("renderTimeline", () => {
         timeline: [timeline[0]],
         frames,
         outputDir,
-        tts,
+        speech,
         exec,
         keepIntermediates: true,
       });
@@ -257,7 +300,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -284,7 +327,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir: trickyDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -315,7 +358,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir: trickyDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -359,7 +402,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -393,7 +436,7 @@ describe("renderTimeline", () => {
         timeline,
         frames,
         outputDir,
-        tts,
+        speech,
         exec,
       }),
     ).rejects.toThrow(/no frames available/);
@@ -407,7 +450,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
     });
 
@@ -419,7 +462,7 @@ describe("renderTimeline", () => {
 
     for (const s of result.segments) {
       expect(s.segmentVideoPath).toBeUndefined();
-      expect(s.ttsAudioPath).toBeUndefined();
+      expect(s.audioPath).toBeUndefined();
     }
   });
 
@@ -431,7 +474,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -439,7 +482,7 @@ describe("renderTimeline", () => {
     expect(existsSync(join(outputDir, "segment-0.mp4"))).toBe(true);
     expect(existsSync(join(outputDir, "audio-0.mp3"))).toBe(true);
     expect(result.segments[0].segmentVideoPath).toBeDefined();
-    expect(result.segments[0].ttsAudioPath).toBeDefined();
+    expect(result.segments[0].audioPath).toBeDefined();
   });
 
   it("throws if the duration probe stderr has no Duration line", async () => {
@@ -451,7 +494,7 @@ describe("renderTimeline", () => {
     };
 
     await expect(
-      renderTimeline({ timeline, frames, outputDir, tts, exec }),
+      renderTimeline({ timeline, frames, outputDir, speech, exec }),
     ).rejects.toThrow(/could not parse audio duration/);
   });
 
@@ -461,7 +504,7 @@ describe("renderTimeline", () => {
         timeline: [],
         frames: [],
         outputDir,
-        tts,
+        speech,
       }),
     ).rejects.toThrow(/timeline is empty/);
   });
@@ -480,7 +523,7 @@ describe("renderTimeline", () => {
     };
 
     await expect(
-      renderTimeline({ timeline, frames, outputDir, tts, exec }),
+      renderTimeline({ timeline, frames, outputDir, speech, exec }),
     ).rejects.toThrow(/ffmpeg exited with status 1/);
   });
 });
@@ -499,10 +542,13 @@ describe("renderTimeline frame encodings", () => {
       writeFileSync(out, "fake");
       return { stdout: "", stderr: "", status: 0 };
     };
-    const tts: TTSProvider = {
-      speak: async () => ({
-        audio: new Uint8Array([1, 2, 3]),
-        extension: "mp3",
+    const speech: SpeechOptions = {
+      model: new MockSpeechModelV4({
+        doGenerate: async () => ({
+          audio: new Uint8Array([1, 2, 3]),
+          warnings: [],
+          response: { timestamp: new Date(), modelId: "mock" },
+        }),
       }),
     };
     const entry: TimelineEntry = {
@@ -526,7 +572,7 @@ describe("renderTimeline frame encodings", () => {
         timeline: [entry],
         frames,
         outputDir,
-        tts,
+        speech,
         exec,
         keepIntermediates: true,
         ffmpegPath: "/fake/ffmpeg",
