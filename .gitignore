@@ -41,3 +41,6 @@ npm-debug.log*
 *.mp4
 *.mp3
 *.wav
+
+# Node compile cache (created when running dist/ with NODE_COMPILE_CACHE)
+node-compile-cache/

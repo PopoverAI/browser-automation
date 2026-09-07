@@ -206,8 +206,44 @@ describe("renderTimeline", () => {
     expect(encodeCall).toBeDefined();
     const encodeArgs = encodeCall![1] as ReadonlyArray<string>;
     expect(encodeArgs).toContain("scale=trunc(iw/2)*2:trunc(ih/2)*2");
-    expect(encodeArgs).toContain("-t");
-    expect(encodeArgs).toContain("00:00:02.50");
+    // Segment length is max(video, audio): audio is padded and the encode
+    // stops at the video's end, whose last frame is held to the audio length.
+    expect(encodeArgs).toContain("apad");
+    expect(encodeArgs).toContain("-shortest");
+    expect(encodeArgs).not.toContain("-t");
+  });
+
+  it("holds the last frame until the narration ends (plus a short tail)", async () => {
+    const { timeline, frames } = makeTimeline();
+    const { exec } = makeDefaultExec();
+    const outputDir = mkdtempSync(join(tmpdir(), "demo-render-hold-"));
+    try {
+      await renderTimeline({
+        timeline: [timeline[0]],
+        frames,
+        outputDir,
+        tts,
+        exec,
+        keepIntermediates: true,
+      });
+      const list = readFileSync(
+        join(outputDir, "segment-0-frames", "frames.txt"),
+        "utf8",
+      );
+      const durations = [...list.matchAll(/duration ([\d.]+)/g)].map((m) =>
+        Number(m[1]),
+      );
+      // Frames at 1010/1050/1090: two 0.1s (clamped from 0.04) holds, then the
+      // last frame runs to the 2.5s narration end: 2.5 - 0.08 + 0.25.
+      expect(durations).toHaveLength(3);
+      expect(durations[0]).toBeCloseTo(0.1, 3);
+      expect(durations[1]).toBeCloseTo(0.1, 3);
+      expect(durations[2]).toBeCloseTo(2.67, 3);
+      // Trailing repeated file line so the last duration is honored.
+      expect(list.trim().endsWith("frame-002.png'")).toBe(true);
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
   });
 
   it("produces a concat list with one entry per segment in order", async () => {
@@ -446,5 +482,55 @@ describe("renderTimeline", () => {
     await expect(
       renderTimeline({ timeline, frames, outputDir, tts, exec }),
     ).rejects.toThrow(/ffmpeg exited with status 1/);
+  });
+});
+
+describe("renderTimeline frame encodings", () => {
+  it("writes jpeg frames with a .jpg extension and png frames with .png", async () => {
+    const outputDir = mkdtempSync(join(tmpdir(), "demo-render-fmt-"));
+    const seen: string[][] = [];
+    const exec: ExecRunner = (_bin, args) => {
+      seen.push([...args]);
+      // Probe (`-i audio`, no output): return a duration line.
+      if (args.length === 2 && args[0] === "-i") {
+        return { stdout: "", stderr: PROBE_STDERR, status: 1 };
+      }
+      const out = args[args.length - 1];
+      writeFileSync(out, "fake");
+      return { stdout: "", stderr: "", status: 0 };
+    };
+    const tts: TTSProvider = {
+      speak: async () => ({ audio: new Uint8Array([1, 2, 3]), extension: "mp3" }),
+    };
+    const entry: TimelineEntry = {
+      instruction: "x",
+      narrative: "y",
+      startTime: 1000,
+      endTime: 1100,
+      frameCount: 2,
+      segmentDuration: 0.1,
+    };
+    const frames: CapturedFrame[] = [
+      { timestamp: 1010, data: Buffer.from("j").toString("base64"), format: "jpeg" },
+      { timestamp: 1050, data: Buffer.from("p").toString("base64") },
+    ];
+    try {
+      await renderTimeline({
+        timeline: [entry],
+        frames,
+        outputDir,
+        tts,
+        exec,
+        keepIntermediates: true,
+        ffmpegPath: "/fake/ffmpeg",
+      });
+      const list = readFileSync(join(outputDir, "segment-0-frames", "frames.txt"), "utf8");
+      expect(list).toMatch(/frame-000\.jpg/);
+      expect(list).toMatch(/frame-001\.png/);
+      expect(existsSync(join(outputDir, "segment-0-frames", "frame-000.jpg"))).toBe(true);
+      expect(existsSync(join(outputDir, "segment-0-frames", "frame-001.png"))).toBe(true);
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
   });
 });

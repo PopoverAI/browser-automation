@@ -104,6 +104,7 @@ Both tools see the same page, cookies, and DOM.
 - connect — reconnects daemon to a different browser
 - session — agent-browser's own session management, bypasses Stagehand
 - tab new, tab close, tab <n> — Stagehand loses track of the active page
+- record start/stop — opens a fresh context in a new tab (page state is lost) and leaves Stagehand on the old one
 
 **For localhost URLs in cloud sessions**, use stagehand_navigate (has ngrok tunneling).
 

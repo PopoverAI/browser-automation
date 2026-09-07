@@ -11,8 +11,10 @@ export interface CapturedFrame {
    * Falls back to `Date.now()` if the CDP event omits the timestamp.
    */
   timestamp: number;
-  /** Base64-encoded PNG data. */
+  /** Base64-encoded image data. */
   data: string;
+  /** Image encoding of `data`. Default "png" (Stagehand CDP screencast); the agent-browser stream sends "jpeg". */
+  format?: "png" | "jpeg";
 }
 
 export interface TimelineEntry {

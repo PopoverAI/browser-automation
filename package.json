@@ -33,7 +33,8 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "browser-automation": "cli.js"
+    "browser-automation": "cli.js",
+    "browser-demo": "dist/demo/cli.js"
   },
   "files": [
     "assets",
@@ -43,7 +44,7 @@
     "config.d.ts"
   ],
   "scripts": {
-    "build": "tsc && shx chmod +x dist/*.js",
+    "build": "tsc && shx chmod +x dist/*.js dist/demo/cli.js",
     "prepare": "husky && pnpm build",
     "watch": "tsc --watch",
     "smithery": "npx @smithery/cli dev src/index.ts",

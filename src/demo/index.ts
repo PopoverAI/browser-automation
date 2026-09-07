@@ -17,5 +17,35 @@ export type {
   RenderedSegment,
 } from "./render.js";
 
-export { createOpenAITTS } from "./tts.js";
-export type { TTSProvider, TTSResult } from "./tts.js";
+export {
+  attachAgentBrowserDemoRecorder,
+  DemoStepError,
+  formatCommands,
+} from "./agentBrowserRecorder.js";
+export type {
+  AgentBrowserDemoRecorder,
+  AttachAgentBrowserDemoRecorderOptions,
+  DemoStepOptions,
+} from "./agentBrowserRecorder.js";
+
+export {
+  AgentBrowserClient,
+  AgentBrowserError,
+  DEFAULT_AGENT_BROWSER_COMMAND,
+} from "./agentBrowserClient.js";
+export type {
+  AgentBrowserClientOptions,
+  AgentBrowserExec,
+  AgentBrowserExecOptions,
+  AgentBrowserExecResult,
+  BatchCommandResult,
+  BatchOptions,
+  StreamStatus,
+} from "./agentBrowserClient.js";
+
+export {
+  createOpenAITTS,
+  createSilentTTS,
+  estimateSpeechSeconds,
+} from "./tts.js";
+export type { SilentTTSOptions, TTSProvider, TTSResult } from "./tts.js";

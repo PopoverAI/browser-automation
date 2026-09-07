@@ -52,7 +52,7 @@ BROWSERBASE_PROJECT_ID=...       # only needed for cloud: true
 NGROK_AUTHTOKEN=...              # only needed for cloud: true with localhost URLs
 VERCEL_AUTOMATION_BYPASS_SECRET=... # optional, for Vercel preview deployments
 STAGEHAND_VARIABLES=...          # optional, JSON map of variables auto-injected into stagehand_act, stagehand_agent, and stagehand_scenario (see Variables below)
-OPENAI_API_KEY=...               # only needed for stagehand_demo_video (TTS via gpt-4o-mini-tts)
+OPENAI_API_KEY=...               # only needed for demo videos (TTS via gpt-4o-mini-tts); browser-demo --silent works without it
 ```
 
 ## Variables
@@ -187,7 +187,61 @@ Multiple scripts can share one session — `init` once, call each script's funct
 
 ## Demo videos
 
-Generate a narrated mp4 walkthrough of a Stagehand flow. Each action runs through `stagehand.act` with a CDP screencast attached, narration is generated per-action via OpenAI TTS, and per-segment mp4s are concatenated into one final video.
+Generate a narrated mp4 walkthrough of a browser flow. Two recorders share one render pipeline (`renderTimeline`: per-step OpenAI TTS, ffmpeg segment encode, concat):
+
+- **agent-browser** (`browser-demo` CLI / `attachAgentBrowserDemoRecorder`) — drives [agent-browser](https://www.npmjs.com/package/agent-browser) and captures frames from its viewport stream. No Stagehand, no Playwright; the daemon owns the browser, so this works against local Chrome, `--cdp <wsUrl>`, or any `agent-browser --provider` (Browserbase, Kernel, Browserless, AgentCore, …).
+- **Stagehand** (`stagehand_demo_video` tool / `attachDemoRecorder`) — the original recorder over `stagehand.act`, documented further down.
+
+### `browser-demo` CLI (agent-browser)
+
+Write a steps file — each step is one `agent-browser batch --bail` and becomes one narrated segment:
+
+```json
+{
+  "url": "https://app.example.com/login",
+  "steps": [
+    { "narrate": "Sign in with the demo account.",
+      "commands": [["fill", "#email", "demo@example.com"], ["fill", "#password", "hunter2"],
+                   ["find", "text", "Sign in", "click"], ["wait", "--load", "networkidle"]] },
+    { "narrate": "The dashboard shows this week's numbers.",
+      "commands": [["find", "text", "This week", "click"], ["wait", "500"]] }
+  ]
+}
+```
+
+Then:
+
+```bash
+npx browser-demo steps.json --out ./demo            # narrated via OPENAI_API_KEY
+npx browser-demo steps.json --out ./demo --silent   # same timing, silent track (no key needed)
+```
+
+Prints the path to `final.mp4` (`--json` for a summary with per-segment frame counts). Other flags: `--session <name>`, `--agent-browser "<cmd>"` (default `npx agent-browser`), `--voice`, `--keep`, `--trailing-delay <ms>`, `--max-fps <n>`, `--ffmpeg <path>`. `url` is optional — leave it out to record whatever the daemon already has open (e.g. after `agent-browser -p browserbase open …` with the same `--session`); `openArgs` passes extra flags to `open` (`--headers`, `--executable-path`, …).
+
+Commands are agent-browser argv arrays, exactly what `agent-browser batch` reads on stdin. Explore with `agent-browser snapshot -i` first and lock in the sequence; a failing command aborts the demo (the page is then in a state the next narration doesn't describe) and the CLI prints which command failed.
+
+Programmatic:
+
+```ts
+import { AgentBrowserClient, attachAgentBrowserDemoRecorder } from "@popoverai/browser-automation/demo";
+
+const client = new AgentBrowserClient({ session: "demo" });
+await client.run(["open", "https://app.example.com"]);
+
+const demo = await attachAgentBrowserDemoRecorder({ client });
+try {
+  await demo.step([["find", "text", "Sign in", "click"], ["wait", "--load", "networkidle"]], "Signing in.");
+  const { videoPath } = await demo.render({ outputDir: "./out" });
+} finally {
+  await demo.stop();
+}
+```
+
+How it captures: the recorder enables the daemon's `stream` (a localhost WebSocket relaying CDP `Page.screencastFrame` as JPEG) and stamps each frame on receipt; step boundaries are stamped from the same clock around each batch. It does **not** use `agent-browser record` — that opens a fresh context in a new tab (page state is lost at every step boundary), needs `ffmpeg` on `PATH`, and captures at 10 fps.
+
+### Stagehand recorder
+
+Each action runs through `stagehand.act` with a CDP screencast attached, narration is generated per-action via OpenAI TTS, and per-segment mp4s are concatenated into one final video. Each action runs through `stagehand.act` with a CDP screencast attached, narration is generated per-action via OpenAI TTS, and per-segment mp4s are concatenated into one final video.
 
 The flow is meant for *known-good* scripts: explore with the regular tools to figure out what works, then call this once with the locked-in sequence and the narration you want spoken over each step.
 
@@ -250,7 +304,8 @@ The full surface:
 ### Caveats
 
 - **Native ffmpeg binary.** Pulls in `ffmpeg-static` (~44MB downloaded postinstall). Edge runtimes (Cloudflare Workers, Vercel Edge) can't run native binaries — Node serverless (Vercel Fluid Compute, Lambda) is fine.
-- **Single TTS provider in v1.** OpenAI `gpt-4o-mini-tts` via `OPENAI_API_KEY`. `createOpenAITTS` throws at construction time if no key is available, so missing-key errors surface clearly. Pluggable via the `tts` option to `renderTimeline` if you need a different backend.
+- **TTS providers.** OpenAI `gpt-4o-mini-tts` via `OPENAI_API_KEY` (`createOpenAITTS` throws at construction time if no key is available), or `createSilentTTS()` for a silent track sized to the narration (dry runs, CI). Pluggable via the `tts` option to `renderTimeline` if you need a different backend.
+- **Segment length is max(video, audio).** The last frame is held until the narration ends; an action that outlasts its narration is shown to completion over padded silence.
 - **Failure semantics.** If any action throws inside the MCP tool, `demo.stop()` runs as cleanup and the original error propagates — no partial video is produced. If `stop()` itself fails, the cleanup error is logged to stderr and attached as `cause` on the wrapped error.
 - **Stagehand v3 internal API.** The recorder reads CDP via `stagehand.context.activePage().getSessionForFrame(...)` — Stagehand v3's documented (but not stability-guaranteed) path. A future Stagehand upgrade that moves these methods will surface a clear "v3 internal API may have changed" error at attach time.
 

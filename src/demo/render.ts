@@ -51,6 +51,11 @@ export interface RenderTimelineOptions {
    * after the final video is concatenated. Set true to inspect intermediates.
    */
   keepIntermediates?: boolean;
+  /**
+   * Path to an ffmpeg binary. Defaults to the one bundled by `ffmpeg-static`
+   * (or `$FFMPEG_BIN`, which ffmpeg-static honours). Needs libx264 + aac.
+   */
+  ffmpegPath?: string;
   /** Test seam: override the runner used to invoke ffmpeg. */
   exec?: ExecRunner;
 }
@@ -75,7 +80,11 @@ export interface RenderTimelineResult {
 const DEFAULT_VOICE = "alloy";
 const MIN_FRAME_DURATION = 0.1;
 const MAX_FRAME_DURATION = 10;
-const FALLBACK_LAST_FRAME_DURATION = 5;
+/**
+ * How long (s) the last frame is held past the end of the narration. Keeps the
+ * final page state on screen briefly instead of cutting on the last syllable.
+ */
+const LAST_FRAME_TAIL = 0.25;
 
 const defaultExec: ExecRunner = (bin, args) => {
   const r = spawnSync(bin, [...args], { encoding: "utf8" });
@@ -96,12 +105,12 @@ const defaultExec: ExecRunner = (bin, args) => {
 export async function renderTimeline(
   options: RenderTimelineOptions,
 ): Promise<RenderTimelineResult> {
-  if (!ffmpegPath) {
+  const ffmpeg = options.ffmpegPath ?? ffmpegPath;
+  if (!ffmpeg) {
     throw new Error(
-      "ffmpeg-static binary not found — install scripts may have been skipped. Run `pnpm approve-builds` (or equivalent) to allow ffmpeg-static to download its binary.",
+      "ffmpeg-static binary not found — install scripts may have been skipped. Run `pnpm approve-builds` (or equivalent) to allow ffmpeg-static to download its binary, or pass `ffmpegPath`.",
     );
   }
-  const ffmpeg = ffmpegPath;
 
   if (options.timeline.length === 0) {
     throw new Error("renderTimeline: timeline is empty — nothing to render");
@@ -228,22 +237,56 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
   const audioPath = join(outputDir, `audio-${index}.${speech.extension}`);
   writeFileSync(audioPath, Buffer.from(speech.audio));
 
-  // 2. Write frames as PNGs into a per-segment subdir.
+  // 2. Write frames as images into a per-segment subdir (extension follows
+  //    the frame's encoding so ffmpeg's image2 demuxer picks the right decoder).
   const framesDir = join(outputDir, `segment-${index}-frames`);
   mkdirSync(framesDir, { recursive: true });
   const framePaths: string[] = [];
   for (let j = 0; j < segmentFrames.length; j++) {
+    const ext = segmentFrames[j].format === "jpeg" ? "jpg" : "png";
     const framePath = join(
       framesDir,
-      `frame-${j.toString().padStart(3, "0")}.png`,
+      `frame-${j.toString().padStart(3, "0")}.${ext}`,
     );
     writeFileSync(framePath, Buffer.from(segmentFrames[j].data, "base64"));
     framePaths.push(framePath);
   }
 
-  // 3. Build the concat demuxer file with per-frame durations.
+  // 3. Probe audio duration. ffmpeg-static doesn't ship ffprobe, so we run
+  //    `ffmpeg -i <audio>` (no output specified — exits non-zero by design)
+  //    and parse the `Duration: HH:MM:SS.ms` line out of stderr in Node.
+  //    Don't use a shell pipe: anything user-supplied could otherwise be
+  //    interpreted as shell metacharacters.
+  const probe = exec(ffmpeg, ["-i", audioPath]);
+  const durationMatch = probe.stderr.match(
+    /Duration:\s*(\d{2}):(\d{2}):(\d{2}\.\d{2})/,
+  );
+  if (!durationMatch) {
+    throw new Error(
+      `renderTimeline: could not parse audio duration from ffmpeg output for segment ${index}. stderr was: ${probe.stderr.slice(0, 500)}`,
+    );
+  }
+  const audioSeconds =
+    Number(durationMatch[1]) * 3600 +
+    Number(durationMatch[2]) * 60 +
+    Number(durationMatch[3]);
+
+  // 4. Build the concat demuxer file with per-frame durations.
+  //
+  //    Frames are held until the next frame's timestamp; the last frame is
+  //    held until the narration ends (plus a short tail), so the video is
+  //    never shorter than the audio. Segment length is then max(video, audio):
+  //    the encode below pads the audio with silence and stops at the video's
+  //    end, so an action that outlasts its narration is shown to completion
+  //    and a narration that outlasts its action plays over the final frame.
+  //
   //    Quirk: the last frame must be repeated as a trailing `file` line for
   //    its duration to be honored. Per-frame durations are clamped.
+  //
+  //    Don't reach for `-t <audio duration>` here: ffmpeg 6 applies it against
+  //    the concat input's timestamps before frames are duplicated to fill the
+  //    holds, so it drops the trailing frame and the video ends early.
+  const firstTs = segmentFrames[0].timestamp;
   const concatLines: string[] = [];
   for (let j = 0; j < segmentFrames.length; j++) {
     let duration: number;
@@ -251,7 +294,8 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
       duration =
         (segmentFrames[j + 1].timestamp - segmentFrames[j].timestamp) / 1000;
     } else {
-      duration = FALLBACK_LAST_FRAME_DURATION;
+      const lastOffset = (segmentFrames[j].timestamp - firstTs) / 1000;
+      duration = audioSeconds - lastOffset + LAST_FRAME_TAIL;
     }
     duration = Math.max(MIN_FRAME_DURATION, Math.min(duration, MAX_FRAME_DURATION));
     concatLines.push(`file '${escapeConcatPath(framePaths[j])}'`);
@@ -264,22 +308,6 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
   const concatFilePath = join(framesDir, "frames.txt");
   writeFileSync(concatFilePath, concatLines.join("\n"));
 
-  // 4. Probe audio duration. ffmpeg-static doesn't ship ffprobe, so we run
-  //    `ffmpeg -i <audio>` (no output specified — exits non-zero by design)
-  //    and parse the `Duration: HH:MM:SS.ms` line out of stderr in Node.
-  //    Don't use a shell pipe: anything user-supplied could otherwise be
-  //    interpreted as shell metacharacters.
-  const probe = exec(ffmpeg, ["-i", audioPath]);
-  const durationMatch = probe.stderr.match(
-    /Duration:\s*(\d{2}:\d{2}:\d{2}\.\d{2})/,
-  );
-  if (!durationMatch) {
-    throw new Error(
-      `renderTimeline: could not parse audio duration from ffmpeg output for segment ${index}. stderr was: ${probe.stderr.slice(0, 500)}`,
-    );
-  }
-  const durationStr = durationMatch[1];
-
   // 5. Encode the segment.
   const segmentPath = join(outputDir, `segment-${index}.mp4`);
   runChecked(exec, ffmpeg, [
@@ -291,10 +319,11 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
     "-map", "0:v",
     "-map", "1:a",
     "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+    "-af", "apad",
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
     "-c:a", "aac",
-    "-t", durationStr,
+    "-shortest",
     segmentPath,
   ]);
 
