@@ -4,6 +4,7 @@ import {
   AgentBrowserClient,
   AgentBrowserError,
   parseJsonOutput,
+  spawnExec,
   type AgentBrowserExec,
   type AgentBrowserExecResult,
 } from "../src/agentBrowserClient.js";
@@ -66,6 +67,15 @@ describe("AgentBrowserClient", () => {
     expect(args).toEqual(["batch", "--bail", "--json"]);
     expect(opts?.stdin).toBe(JSON.stringify([["click", "@e1"]]));
     expect(opts?.timeoutMs).toBe(5);
+  });
+
+  it("batch keeps the client's default timeout when none is given", async () => {
+    const exec = vi.fn<AgentBrowserExec>(async () => ok("[]"));
+    const client = new AgentBrowserClient({ exec, timeoutMs: 4242 });
+    await client.batch([["wait", "1"]]);
+    expect(exec.mock.calls[0][1]?.timeoutMs).toBe(4242);
+    await client.run(["get", "url"], { timeoutMs: undefined });
+    expect(exec.mock.calls[1][1]?.timeoutMs).toBe(4242);
   });
 
   it("batch omits --bail when asked", async () => {
@@ -149,5 +159,27 @@ describe("AgentBrowserClient", () => {
     );
     const client = new AgentBrowserClient({ exec });
     await expect(client.ensureStream()).rejects.toThrow(/no port/);
+  });
+});
+
+describe("spawnExec", () => {
+  it("survives a child that exits before draining stdin (EPIPE) and reports its status", async () => {
+    const exec = spawnExec([process.execPath, "-e", "process.exit(3)"]);
+    const r = await exec([], {
+      stdin: "x".repeat(1024 * 1024),
+      timeoutMs: 10_000,
+    });
+    expect(r.status).toBe(3);
+  });
+
+  it("rejects with a timeout error and kills a hung child", async () => {
+    const exec = spawnExec([
+      process.execPath,
+      "-e",
+      "setInterval(() => {}, 1000)",
+    ]);
+    await expect(exec([], { stdin: "x", timeoutMs: 200 })).rejects.toThrow(
+      /timed out/,
+    );
   });
 });

@@ -53,6 +53,9 @@ export {
 } from "./speechProviders.js";
 export type { ModuleImporter, SpeechSpec } from "./speechProviders.js";
 
+export { resolveSpeech } from "./speechConfig.js";
+export type { ResolveSpeechDeps, SpeechFlags } from "./speechConfig.js";
+
 export {
   exampleStepsFile,
   parseStepsFile,

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * browser-demo — record a narrated demo video by driving agent-browser.
  *
@@ -22,22 +23,13 @@ import {
   DemoStepError,
   stepFailureHints,
 } from "./agentBrowserRecorder.js";
-import type { SpeechOptions } from "./speech.js";
+import { resolveSpeech } from "./speechConfig.js";
 import {
   exampleStepsFile,
   parseStepsFile,
   StepsFileError,
   stepsFileJsonSchema,
-  type StepsFile,
 } from "./stepsFile.js";
-import {
-  assertSpeechCredentials,
-  DEFAULT_OPENAI_VOICE,
-  DEFAULT_SPEECH_SPEC,
-  loadSpeechModel,
-  parseSpeechSpec,
-  type SpeechSpec,
-} from "./speechProviders.js";
 
 interface CliOptions {
   out?: string;
@@ -57,6 +49,15 @@ function log(msg: string): void {
   process.stderr.write(`[browser-demo] ${msg}\n`);
 }
 
+/** A non-negative integer flag, or a clear error — never a silent NaN no-op. */
+function intFlag(name: string, value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^\d+$/.test(value.trim())) {
+    throw new Error(`${name} expects a whole number, got "${value}"`);
+  }
+  return Number(value);
+}
+
 async function main(file: string, opts: CliOptions): Promise<void> {
   const steps = parseStepsFile(resolve(file));
 
@@ -67,7 +68,13 @@ async function main(file: string, opts: CliOptions): Promise<void> {
 
   // Resolve narration before touching the browser so a missing key or
   // provider fails in the first second, not after the recording.
-  const speech = opts.silent ? undefined : await resolveSpeech(steps, opts);
+  // Cheap checks first: flags, then narration credentials — a typo should
+  // fail in the first second, not after the browser work.
+  const trailingDelay = intFlag("--trailing-delay", opts.trailingDelay);
+  const maxFps = intFlag("--max-fps", opts.maxFps);
+  const speech = opts.silent
+    ? undefined
+    : await resolveSpeech(steps.speech, opts, { log });
 
   if (steps.url) {
     log(`open ${steps.url}`);
@@ -83,8 +90,8 @@ async function main(file: string, opts: CliOptions): Promise<void> {
 
   const demo = await attachAgentBrowserDemoRecorder({
     client,
-    trailingDelay: opts.trailingDelay ? Number(opts.trailingDelay) : undefined,
-    maxFps: opts.maxFps ? Number(opts.maxFps) : undefined,
+    trailingDelay,
+    maxFps,
   });
 
   try {
@@ -138,54 +145,6 @@ async function main(file: string, opts: CliOptions): Promise<void> {
     }
     process.stdout.write(result.videoPath + "\n");
   }
-}
-
-/**
- * Precedence: --tts / --voice flags → the steps file's `speech` block →
- * OpenAI gpt-4o-mini-tts with voice "alloy". Credentials come from the
- * provider package's own env var (OPENAI_API_KEY, ELEVENLABS_API_KEY, …).
- */
-export async function resolveSpeech(
-  steps: StepsFile,
-  opts: Pick<CliOptions, "tts" | "voice">,
-  deps: { loadModel?: typeof loadSpeechModel; env?: NodeJS.ProcessEnv } = {},
-): Promise<SpeechOptions> {
-  const file = steps.speech ?? {};
-  let spec: SpeechSpec;
-  if (opts.tts) {
-    spec = parseSpeechSpec(opts.tts);
-  } else if (file.provider) {
-    spec = { provider: file.provider.toLowerCase(), model: file.model };
-  } else {
-    spec = DEFAULT_SPEECH_SPEC;
-  }
-  assertSpeechCredentials(spec, deps.env);
-
-  const model = await (deps.loadModel ?? loadSpeechModel)(spec);
-  // Flags beat the file; the file's voice only applies to its own provider.
-  const fileVoice =
-    !opts.tts || opts.tts.split(":")[0].toLowerCase() === file.provider
-      ? file.voice
-      : undefined;
-  const voice =
-    opts.voice ??
-    fileVoice ??
-    (spec.provider === "openai" ? DEFAULT_OPENAI_VOICE : undefined);
-
-  const speech: SpeechOptions = { model };
-  if (voice) speech.voice = voice;
-  if (file.instructions) speech.instructions = file.instructions;
-  if (file.speed) speech.speed = file.speed;
-  if (file.language) speech.language = file.language;
-  if (file.outputFormat) speech.outputFormat = file.outputFormat;
-  if (file.providerOptions) {
-    speech.providerOptions =
-      file.providerOptions as SpeechOptions["providerOptions"];
-  }
-  log(
-    `narration: ${spec.provider}${spec.model ? `:${spec.model}` : ""}${voice ? ` (voice ${voice})` : ""}`,
-  );
-  return speech;
 }
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");

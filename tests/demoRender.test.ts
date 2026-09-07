@@ -280,11 +280,11 @@ describe("renderTimeline", () => {
       const durations = [...list.matchAll(/duration ([\d.]+)/g)].map((m) =>
         Number(m[1]),
       );
-      // Frames at 1010/1050/1090: two 0.1s (clamped from 0.04) holds, then the
-      // last frame runs to the 2.5s narration end: 2.5 - 0.08 + 0.25.
+      // Frames at 1010/1050/1090: two real 0.04s gaps (above the 20ms floor),
+      // then the last frame runs to the 2.5s narration end: 2.5 - 0.08 + 0.25.
       expect(durations).toHaveLength(3);
-      expect(durations[0]).toBeCloseTo(0.1, 3);
-      expect(durations[1]).toBeCloseTo(0.1, 3);
+      expect(durations[0]).toBeCloseTo(0.04, 3);
+      expect(durations[1]).toBeCloseTo(0.04, 3);
       expect(durations[2]).toBeCloseTo(2.67, 3);
       // Trailing repeated file line so the last duration is honored.
       expect(list.trim().endsWith("frame-002.png'")).toBe(true);
@@ -526,6 +526,102 @@ describe("renderTimeline", () => {
     await expect(
       renderTimeline({ timeline, frames, outputDir, speech, exec }),
     ).rejects.toThrow(/ffmpeg exited with status 1/);
+  });
+});
+
+describe("renderTimeline segment length = max(video, audio)", () => {
+  const PROBE_15S =
+    "ffmpeg version blah\n  Duration: 00:00:15.00, start: 0.000000, bitrate: 32 kb/s\n";
+
+  function execWithAudio(stderr: string): ExecRunner {
+    return (_bin, args) => {
+      if (args.length === 2 && args[0] === "-i") {
+        return { stdout: "", stderr, status: 1 };
+      }
+      const out = args[args.length - 1];
+      writeFileSync(out, "fake");
+      return { stdout: "", stderr: "", status: 0 };
+    };
+  }
+
+  const speech: SpeechOptions = {
+    model: new MockSpeechModelV4({
+      doGenerate: async () => ({
+        audio: new Uint8Array([1]),
+        warnings: [],
+        response: { timestamp: new Date(), modelId: "mock" },
+      }),
+    }),
+  };
+
+  async function durationsFor(
+    frames: CapturedFrame[],
+    entry: TimelineEntry,
+    probe: string,
+  ): Promise<number[]> {
+    const outputDir = mkdtempSync(join(tmpdir(), "demo-render-len-"));
+    try {
+      await renderTimeline({
+        timeline: [entry],
+        frames,
+        outputDir,
+        speech,
+        exec: execWithAudio(probe),
+        keepIntermediates: true,
+        ffmpegPath: "/fake/ffmpeg",
+      });
+      const list = readFileSync(
+        join(outputDir, "segment-0-frames", "frames.txt"),
+        "utf8",
+      );
+      return [...list.matchAll(/duration ([\d.]+)/g)].map((m) => Number(m[1]));
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  }
+
+  const f = (t: number): CapturedFrame => ({
+    timestamp: t,
+    data: Buffer.from(`f${t}`).toString("base64"),
+  });
+  const entry = (start: number, end: number): TimelineEntry => ({
+    instruction: "x",
+    narrative: "y",
+    startTime: start,
+    endTime: end,
+    frameCount: 0,
+    segmentDuration: (end - start) / 1000,
+  });
+
+  it("does not clamp the last frame's hold — a 15s narration over one frame is held 15.25s", async () => {
+    const d = await durationsFor([f(1000)], entry(1000, 1100), PROBE_15S);
+    expect(d).toEqual([15.25]);
+  });
+
+  it("derives the last hold from clamped video time so 30 fps capture is not slowed", async () => {
+    // 91 frames 33ms apart = 3.0s of real time; gaps stay 0.033 (above the
+    // 20ms floor), and the last hold tops the total up to audio + tail.
+    const frames = Array.from({ length: 91 }, (_, i) => f(1000 + i * 33));
+    const d = await durationsFor(frames, entry(1000, 4100), PROBE_STDERR); // 2.5s audio
+    const gaps = d.slice(0, -1);
+    expect(gaps.every((g) => Math.abs(g - 0.033) < 1e-9)).toBe(true);
+    const total = d.reduce((a, b) => a + b, 0);
+    // Video already exceeds the 2.5s narration, so the last frame gets only the tail.
+    expect(d.at(-1)).toBeCloseTo(0.25, 3);
+    expect(total).toBeCloseTo(90 * 0.033 + 0.25, 3);
+  });
+
+  it("accounts for a clamped long gap when sizing the last hold", async () => {
+    // A 30s repaint-free gap is clamped to 10s; the last hold must be computed
+    // from the 10s actually laid down, not the 30s raw offset (which would go
+    // negative and truncate a 15s narration).
+    const d = await durationsFor(
+      [f(1000), f(31000)],
+      entry(1000, 31100),
+      PROBE_15S,
+    );
+    expect(d[0]).toBe(10);
+    expect(d[1]).toBeCloseTo(15 - 10 + 0.25, 3);
   });
 });
 

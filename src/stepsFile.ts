@@ -6,9 +6,13 @@ import { z } from "zod/v4";
  * The steps file: what `browser-demo` records. Defined once here so the
  * validator, the published JSON Schema (`browser-demo schema`), and the
  * starter example (`browser-demo example`) cannot drift apart.
+ *
+ * Objects are strict: a misspelled optional key (`trailingDelayMs`,
+ * `voise`) is a validation error, not a silently ignored default — the
+ * whole point of `validate` for an agent authoring the file.
  */
 
-const SpeechOverridesSchema = z.object({
+const SpeechOverridesSchema = z.strictObject({
   voice: z
     .string()
     .optional()
@@ -49,7 +53,7 @@ const SpeechSchema = SpeechOverridesSchema.extend({
     .describe("Provider-specific options, keyed by provider name."),
 });
 
-const StepSchema = z.object({
+const StepSchema = z.strictObject({
   narrate: z
     .string()
     .min(1)
@@ -76,7 +80,7 @@ const StepSchema = z.object({
 });
 
 export const StepsFileSchema = z
-  .object({
+  .strictObject({
     url: z
       .string()
       .optional()
@@ -91,6 +95,11 @@ export const StepsFileSchema = z
       "Narration provider and voice. Default: openai gpt-4o-mini-tts, voice alloy.",
     ),
     steps: z.array(StepSchema).min(1),
+  })
+  .refine((f) => !f.openArgs || f.url !== undefined, {
+    path: ["openArgs"],
+    message:
+      "openArgs are passed to `open`, which only runs when `url` is set — add a url or drop openArgs",
   })
   .describe("browser-demo steps file");
 

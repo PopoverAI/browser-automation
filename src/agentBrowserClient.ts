@@ -113,8 +113,10 @@ export class AgentBrowserClient {
     opts: AgentBrowserExecOptions = {},
   ): Promise<AgentBrowserExecResult> {
     return this.exec([...this.globalArgs(), ...args], {
-      timeoutMs: this.timeoutMs,
       ...opts,
+      // Callers routinely forward an undefined timeoutMs; that must not
+      // erase the default and leave a hung child unbounded.
+      timeoutMs: opts.timeoutMs ?? this.timeoutMs,
     });
   }
 
@@ -291,6 +293,10 @@ export function spawnExec(command: ReadonlyArray<string>): AgentBrowserExec {
         }, opts.timeoutMs);
       }
 
+      // A child that exits before draining stdin (bad --session, daemon
+      // gone, our own SIGKILL on timeout) raises EPIPE on this stream. That
+      // is not an error of ours: the exit status / timeout path reports it.
+      child.stdin.on("error", () => {});
       if (opts.stdin !== undefined) {
         child.stdin.end(opts.stdin);
       } else {

@@ -140,17 +140,39 @@ export async function attachAgentBrowserDemoRecorder(
     streamUrl = s.url;
     enabledByUs = s.enabledByUs;
   }
-  if (maxFps > 0) {
-    const u = new URL(streamUrl);
-    u.searchParams.set("maxFps", String(maxFps));
-    streamUrl = u.toString();
-  }
-
   const frames: CapturedFrame[] = [];
   const entries: TimelineEntry[] = [];
   let stopped = false;
+  /** Set when the stream dies mid-run; the next step() fails instead of recording nothing. */
+  let streamFailure: Error | undefined;
 
-  const ws = await openSocket(streamUrl, connectTimeoutMs);
+  let ws: WebSocket;
+  try {
+    if (maxFps > 0) {
+      const u = new URL(streamUrl);
+      u.searchParams.set("maxFps", String(maxFps));
+      streamUrl = u.toString();
+    }
+    ws = await openSocket(streamUrl, connectTimeoutMs);
+  } catch (err) {
+    // We may have just enabled the daemon's stream; don't leave it
+    // screencasting to nobody because the connect failed.
+    if (enabledByUs) await client.disableStream();
+    throw err;
+  }
+
+  ws.on("close", (code) => {
+    if (!stopped) {
+      streamFailure = new Error(
+        `agent-browser stream closed mid-run (code ${code}) — the daemon restarted or went away`,
+      );
+    }
+  });
+  ws.on("error", (err) => {
+    if (!stopped) {
+      streamFailure = new Error(`agent-browser stream error: ${err.message}`);
+    }
+  });
 
   ws.on("message", (raw) => {
     let msg: { type?: string };
@@ -190,6 +212,12 @@ export async function attachAgentBrowserDemoRecorder(
       if (stopped) {
         throw new Error(
           "AgentBrowserDemoRecorder.step: recorder has been stopped",
+        );
+      }
+      if (streamFailure) {
+        throw new Error(
+          `AgentBrowserDemoRecorder.step: cannot record — ${streamFailure.message}`,
+          { cause: streamFailure },
         );
       }
       if (commands.length === 0) {

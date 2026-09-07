@@ -365,6 +365,64 @@ describe("attachAgentBrowserDemoRecorder", () => {
     ]);
   });
 
+  it("disables a stream it enabled if the socket never opens", async () => {
+    let enabled = false;
+    const calls: string[][] = [];
+    const exec = vi.fn<AgentBrowserExec>(async (args) => {
+      calls.push([...args]);
+      if (args[0] === "stream" && args[1] === "status") {
+        return {
+          stdout: JSON.stringify({
+            success: true,
+            // Port 1: nothing listens there, so the connect fails.
+            data: enabled ? { enabled: true, port: 1 } : { enabled: false },
+            error: null,
+          }),
+          stderr: "",
+          status: 0,
+        };
+      }
+      if (
+        args[0] === "stream" &&
+        (args[1] === "enable" || args[1] === "disable")
+      ) {
+        enabled = args[1] === "enable";
+        return { stdout: "", stderr: "", status: 0 };
+      }
+      throw new Error(`unexpected ${args.join(" ")}`);
+    });
+    await expect(
+      attachAgentBrowserDemoRecorder({
+        client: new AgentBrowserClient({ exec }),
+        connectTimeoutMs: 500,
+      }),
+    ).rejects.toThrow(/could not connect|did not open/);
+    expect(calls.some((c) => c[0] === "stream" && c[1] === "disable")).toBe(
+      true,
+    );
+  });
+
+  it("fails the next step when the stream drops mid-run instead of recording nothing", async () => {
+    const { exec } = makeFakeExec(stream);
+    const demo = await attachAgentBrowserDemoRecorder({
+      client: new AgentBrowserClient({ exec }),
+      trailingDelay: 0,
+    });
+    await until(() => stream.clientCount === 1);
+    await demo.step([["wait", "1"]], "first");
+    await stream.stop(); // daemon goes away
+    await until(() => stream.clientCount === 0);
+    await new Promise((r) => setTimeout(r, 20));
+    await expect(demo.step([["wait", "1"]], "second")).rejects.toThrow(
+      /stream closed mid-run/,
+    );
+    expect(demo.timeline().entries).toHaveLength(1);
+    await demo.stop();
+    // afterEach stops the stream again; make that a no-op.
+    stream = new FakeStream();
+    await stream.start();
+  });
+
   it("appends maxFps to the stream URL when set", async () => {
     const seen: string[] = [];
     const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });

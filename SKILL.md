@@ -1,7 +1,7 @@
 ---
 name: browser-demo
 description: Record a narrated demo video of a web flow by driving agent-browser. Use when asked for a product walkthrough, feature demo, tutorial video, or "record a video of X happening in the browser". Output is an mp4 with per-step narration.
-allowed-tools: Bash(browser-demo:*), Bash(npx browser-demo:*), Bash(agent-browser:*), Bash(npx agent-browser:*)
+allowed-tools: Bash(browser-demo:*), Bash(npx -p @popoverai/browser-automation browser-demo:*), Bash(agent-browser:*), Bash(npx agent-browser:*)
 ---
 
 # browser-demo
@@ -11,6 +11,9 @@ each — into an mp4. Each step runs as one `agent-browser batch --bail`, the
 browser's viewport is captured while it runs, narration is synthesised per
 step, and segments are concatenated with the last frame of each held until
 its narration ends.
+
+Installed as `@popoverai/browser-automation`; the bin is `browser-demo`. Without
+an install: `npx -p @popoverai/browser-automation browser-demo …`.
 
 ```bash
 browser-demo guide            # this document
@@ -53,7 +56,11 @@ browser-demo record FILE      # record (also: browser-demo FILE)
 ```json
 {
   "url": "https://app.example.com/login",
-  "speech": { "provider": "openai", "model": "gpt-4o-mini-tts", "voice": "alloy" },
+  "speech": {
+    "provider": "openai",
+    "model": "gpt-4o-mini-tts",
+    "voice": "alloy"
+  },
   "steps": [
     {
       "narrate": "Sign in with the demo account.",
@@ -66,7 +73,10 @@ browser-demo record FILE      # record (also: browser-demo FILE)
     },
     {
       "narrate": "The dashboard opens on this week's numbers.",
-      "commands": [["find", "text", "This week", "click"], ["wait", "500"]],
+      "commands": [
+        ["find", "text", "This week", "click"],
+        ["wait", "500"]
+      ],
       "trailingDelay": 1500
     }
   ]

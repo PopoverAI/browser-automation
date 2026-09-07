@@ -75,7 +75,14 @@ export interface RenderTimelineResult {
   segments: RenderedSegment[];
 }
 
-const MIN_FRAME_DURATION = 0.1;
+/**
+ * Floor for the gap between two captured frames. Guards against zero-length
+ * entries (two frames stamped in the same millisecond) without slowing real
+ * motion: the stream is change-driven and can exceed 25 fps on animated pages,
+ * so a floor anywhere near 100 ms would stretch a 30 fps second into three.
+ */
+const MIN_FRAME_DURATION = 0.02;
+/** Ceiling for the gap between two captured frames (a long repaint-free wait). */
 const MAX_FRAME_DURATION = 10;
 /**
  * How long (s) the last frame is held past the end of the narration. Keeps the
@@ -285,26 +292,32 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
   //    and a narration that outlasts its action plays over the final frame.
   //
   //    Quirk: the last frame must be repeated as a trailing `file` line for
-  //    its duration to be honored. Per-frame durations are clamped.
+  //    its duration to be honored. Gaps between captured frames are clamped;
+  //    the last frame's hold is not (the narration can be as long as it
+  //    likes) and is computed from the clamped video time actually laid down,
+  //    so audio and video stay aligned however the clamps moved things.
   //
   //    Don't reach for `-t <audio duration>` here: ffmpeg 6 applies it against
   //    the concat input's timestamps before frames are duplicated to fill the
   //    holds, so it drops the trailing frame and the video ends early.
-  const firstTs = segmentFrames[0].timestamp;
   const concatLines: string[] = [];
+  let laidDown = 0; // seconds of video written so far, after clamping
   for (let j = 0; j < segmentFrames.length; j++) {
     let duration: number;
     if (j < segmentFrames.length - 1) {
-      duration =
+      const gap =
         (segmentFrames[j + 1].timestamp - segmentFrames[j].timestamp) / 1000;
+      duration = Math.max(
+        MIN_FRAME_DURATION,
+        Math.min(gap, MAX_FRAME_DURATION),
+      );
     } else {
-      const lastOffset = (segmentFrames[j].timestamp - firstTs) / 1000;
-      duration = audioSeconds - lastOffset + LAST_FRAME_TAIL;
+      duration = Math.max(
+        LAST_FRAME_TAIL,
+        audioSeconds - laidDown + LAST_FRAME_TAIL,
+      );
     }
-    duration = Math.max(
-      MIN_FRAME_DURATION,
-      Math.min(duration, MAX_FRAME_DURATION),
-    );
+    laidDown += duration;
     concatLines.push(`file '${escapeConcatPath(framePaths[j])}'`);
     concatLines.push(`duration ${duration.toFixed(3)}`);
   }

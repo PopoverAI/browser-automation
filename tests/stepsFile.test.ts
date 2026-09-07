@@ -40,6 +40,46 @@ describe("steps file", () => {
     );
   });
 
+  it("is strict: a misspelled optional key is an error, not a silent default", () => {
+    const bad = (obj: unknown) => StepsFileSchema.safeParse(obj);
+    expect(
+      bad({
+        steps: [
+          { narrate: "x", commands: [["wait", "1"]], trailingDelayMs: 5 },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      bad({
+        speech: { voise: "alloy" },
+        steps: [{ narrate: "x", commands: [["wait", "1"]] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      bad({
+        steps: [
+          { narrate: "x", commands: [["wait", "1"]], speech: { voise: "a" } },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects openArgs without a url, since open never runs", () => {
+    const r = StepsFileSchema.safeParse({
+      openArgs: ["--headers", "{}"],
+      steps: [{ narrate: "x", commands: [["wait", "1"]] }],
+    });
+    expect(r.success).toBe(false);
+    expect(JSON.stringify(r.error?.issues)).toMatch(/openArgs/);
+    expect(
+      StepsFileSchema.safeParse({
+        url: "https://x",
+        openArgs: ["--headers", "{}"],
+        steps: [{ narrate: "x", commands: [["wait", "1"]] }],
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects empty command arrays and empty steps", () => {
     expect(
       StepsFileSchema.safeParse({ steps: [{ narrate: "x", commands: [[]] }] })
