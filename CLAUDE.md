@@ -47,10 +47,17 @@ an observation rather than a problem.
 pnpm install          # also builds, via the `prepare` script
 pnpm build            # tsc && chmod +x dist/*.js
 pnpm test             # vitest run
+pnpm typecheck        # tsc --noEmit over src/ AND tests/ (see below)
 pnpm lint             # eslint . --ext .ts   (see "Known red" below)
 pnpm format           # prettier --write .
 pnpm evals            # MCP evals — slow, hits real models
 ```
+
+**Typechecking:** run `pnpm typecheck`, not a bare `tsc --noEmit`. The build's
+`tsconfig.json` is scoped to `src/` (it sets `rootDir` there and emits
+declarations), and vitest transpiles tests without typechecking them — so a
+bare `tsc --noEmit` checks no test file at all. `tsconfig.typecheck.json`
+widens the net to `src/` + `tests/` without changing what `pnpm build` emits.
 
 **Known red:** `pnpm lint` fails on `main` with 4 pre-existing errors (an unused
 import in `src/sessionManager.ts`; three `no-explicit-any` hits in

@@ -83,7 +83,12 @@ function makeFakeStagehand(cdp: FakeCdp, opts: FakeStagehandOptions = {}) {
     return { success: true, completed: true, message: "ok", actions: [] };
   });
 
-  const agentFactory = vi.fn(() => ({ execute: agentExecute }));
+  // Typed parameter so the fake matches how the recorder actually calls
+  // stagehand.agent(config) — without it the mock infers a zero-arg
+  // signature and the calls[0][0] assertion below is a type error.
+  const agentFactory = vi.fn((_config?: Parameters<Stagehand["agent"]>[0]) => ({
+    execute: agentExecute,
+  }));
 
   const stagehand = {
     context: { activePage: () => page },

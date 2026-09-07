@@ -45,9 +45,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        # vitest transpiles without typechecking, so nothing else here
-        # evaluates types on the test files themselves.
-        run: pnpm exec tsc --noEmit
+        # tsconfig.typecheck.json, not the bare tsconfig.json: the build config
+        # is scoped to src/ (rootDir + declaration emit), and vitest transpiles
+        # tests without typechecking them — so a plain `tsc --noEmit` here
+        # checked no test file at all, and a type error in tests/ passed CI.
+        # Verified by injecting one and watching it sail through. Found by
+        # Codex on PR #8.
+        run: pnpm run typecheck
 
       - name: Run tests
         run: pnpm test
