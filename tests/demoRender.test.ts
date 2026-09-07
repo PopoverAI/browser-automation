@@ -11,7 +11,10 @@ import { tmpdir } from "node:os";
 
 import { renderTimeline } from "../src/render.js";
 import type { ExecResult, ExecRunner } from "../src/render.js";
+import type { SpeechModel } from "ai";
 import { MockSpeechModelV4 } from "ai/test";
+
+type SpeechModelV4Like = Extract<SpeechModel, { specificationVersion: "v4" }>;
 
 import type { SpeechOptions } from "../src/speech.js";
 import type { CapturedFrame, TimelineEntry } from "../src/timeline.js";
@@ -93,12 +96,12 @@ function makeDefaultExec(): {
 
 describe("renderTimeline", () => {
   let outputDir: string;
-  let doGenerate: ReturnType<typeof vi.fn>;
+  let doGenerate: ReturnType<typeof vi.fn<SpeechModelV4Like["doGenerate"]>>;
   let speech: SpeechOptions;
 
   beforeEach(() => {
     outputDir = mkdtempSync(join(tmpdir(), "demo-render-test-"));
-    doGenerate = vi.fn(async ({ text }: { text: string }) => ({
+    doGenerate = vi.fn<SpeechModelV4Like["doGenerate"]>(async ({ text }) => ({
       audio: new Uint8Array(Buffer.from(`audio-for-${text}`)),
       warnings: [],
       response: { timestamp: new Date(), modelId: "mock" },
@@ -129,9 +132,7 @@ describe("renderTimeline", () => {
     });
 
     expect(doGenerate).toHaveBeenCalledTimes(2);
-    const texts = doGenerate.mock.calls.map(
-      (c) => (c[0] as { text: string }).text,
-    );
+    const texts = doGenerate.mock.calls.map((c) => c[0].text);
     expect(texts).toEqual(["navigating to login", "submitting the form"]);
     // Render-level options reach the model; the default output format is mp3.
     expect(doGenerate.mock.calls[0][0]).toMatchObject({

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
+import type { SpeechModel } from "ai";
 import { MockSpeechModelV4 } from "ai/test";
+
+type SpeechModelV4Like = Extract<SpeechModel, { specificationVersion: "v4" }>;
 
 import { estimateSpeechSeconds, silentWav, synthesize } from "../src/speech.js";
 
@@ -45,7 +48,7 @@ describe("synthesize", () => {
     // The SDK sniffs the format from the bytes (falling back to mp3), so
     // hand it a real WAV to prove the reported format flows through.
     const wavBytes = silentWav(0.01);
-    const doGenerate = vi.fn(async () => ({
+    const doGenerate = vi.fn<SpeechModelV4Like["doGenerate"]>(async () => ({
       audio: wavBytes,
       warnings: [],
       response: { timestamp: new Date(), modelId: "m" },

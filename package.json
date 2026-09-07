@@ -33,6 +33,7 @@
     "prepare": "husky && pnpm build",
     "watch": "tsc --watch",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write .",
     "clean": "rm -rf dist",

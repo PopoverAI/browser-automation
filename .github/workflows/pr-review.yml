@@ -1,0 +1,207 @@
+name: PR Review
+
+# Claude reviews every pull request, as a formal GitHub review from claude[bot].
+# The judgment lives in .claude/skills/ci-review-pr/ — iterate there, not here:
+# claude-code-action skips any run whose workflow file differs from main, so
+# edits to THIS file land unexercised and are only proven by the next PR.
+#
+# Ported from PopoverAI/dotrequirements (.github/workflows/pr-review.yml); the
+# design write-up lives there at docs/working/ci-pr-review.md. Kept as close to
+# that copy as possible so fixes port between the two repos by diff. The one
+# deliberate divergence is the trust gate in the decide step below — this repo
+# is public and that one is not.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+# A new push supersedes an in-progress round.
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      id-token: write
+    steps:
+      - name: Decide whether and how to review
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          ASSOC: ${{ github.event.pull_request.author_association }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          # pipefail: every gh-api-into-jq pipe below otherwise reports jq's
+          # exit code, so a transient API failure yields empty output and the
+          # gate fails open into a paid review round on an approved PR.
+          set -o pipefail
+
+          # Trust gate. Not in the dotrequirements original, which is a private
+          # repo: there, anyone who can open a PR is already trusted. This repo
+          # is public. The reviewer runs with `gh` authenticated as claude[bot]
+          # and Bash in its allowlist, and its entire job is to ingest
+          # attacker-controlled text — the diff, the PR body, commit subjects.
+          # So only PRs from people who already have write access are reviewed.
+          #
+          # The load-bearing test is the head repo, not author_association:
+          # pushing a branch to this repository already requires write access,
+          # so a same-repo PR is by construction from someone trusted. That
+          # matters because author_association is not dependable here — PR #8
+          # reported CONTRIBUTOR for an org member whose comment on PR #6
+          # reported MEMBER, and an assoc-only gate skipped a maintainer's own
+          # PR (green, reviewing nothing — the exact silent no-op this whole
+          # workflow exists to prevent).
+          #
+          # The assoc check stays as a second chance for a collaborator working
+          # from a fork. Such a run can't reach the model anyway (fork PRs get
+          # no secrets), but widening here costs nothing and keeps this aligned
+          # with the gate claude.yml puts on its @claude trigger (a697ae6).
+          #
+          # Skips green rather than failing: a stranger's PR is a normal event,
+          # not a broken build. The assert step below is gated on run=true, so
+          # it does not then demand a review that was deliberately skipped.
+          trusted=false
+          if [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
+            trusted=true
+          else
+            case "$ASSOC" in
+              OWNER|MEMBER|COLLABORATOR) trusted=true ;;
+            esac
+          fi
+          if [ "$trusted" != "true" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping: PR head '$HEAD_REPO' is a fork and author association '$ASSOC' is not OWNER/MEMBER/COLLABORATOR."
+            echo "A maintainer can review manually, or re-open the PR from a branch in this repo."
+            exit 0
+          fi
+
+          # Approval ends the review: an approved PR costs nothing per push.
+          # Re-opening review after approval is a deliberate act — a human
+          # dismissing the review, or the pusher putting [re-review] in a
+          # commit subject — never a plain push.
+          # --paginate --slurp: reviews span pages on a long-lived PR, and a
+          # missed later page is a missed approval (an extra round per push).
+          # Piped to jq because gh refuses --slurp together with --jq.
+          reviews=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" \
+            | jq '(add // []) | map(select(.user.login == "claude[bot]"))')
+          last_state=$(echo "$reviews" | jq -r 'last | .state // "NONE"')
+          count=$(echo "$reviews" | jq 'length')
+
+          rereview=false
+          if [ "$last_state" = "APPROVED" ]; then
+            # [re-review] in the subject line of any commit the approval
+            # doesn't cover buys one fresh round; its verdict then governs as
+            # usual. Subject only: a body may talk about the tag (a changelog,
+            # a revert) without requesting a round. Scanned from the
+            # approved review's commit_id rather than just the pushed head so
+            # a tagged round cancelled by a fast follow-up push (concurrency)
+            # doesn't drop the request. After a force-push the approved commit
+            # may be gone from the list; every commit is then uncovered and
+            # the whole list is scanned. The endpoint returns at most 250
+            # commits no matter the pagination; at that cap a tag beyond the
+            # returned list can't be ruled out, so the gate buys the round
+            # rather than silently skipping.
+            approved_sha=$(echo "$reviews" | jq -r 'last | .commit_id')
+            verdict=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls/${PR}/commits" \
+              | jq -r --arg sha "$approved_sha" '(add // [])
+                  | (map(.sha) | index($sha)) as $i
+                  | (if $i == null then . else .[($i + 1):] end) as $uncovered
+                  | ($uncovered | map(select(.commit.message | split("\n")[0] | test("\\[re-review\\]"; "i"))) | length) as $tagged
+                  | if $tagged > 0 then "tagged=\($tagged)"
+                    elif length >= 250 then "capped"
+                    else "untagged" end')
+            if [ "$verdict" = "untagged" ]; then
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              echo "Skipping: claude[bot] has approved this PR."
+              exit 0
+            fi
+            rereview=true
+            if [ "$verdict" = "capped" ]; then
+              echo "Re-review: the commit list hit the API's 250 cap; a tag beyond it can't be ruled out."
+            else
+              echo "Re-review requested: ${verdict#tagged=} tagged commit(s) since approved ${approved_sha}."
+            fi
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "prior=$count" >> "$GITHUB_OUTPUT"
+          echo "rereview=$rereview" >> "$GITHUB_OUTPUT"
+
+          # Release PRs (base production) get Fable on the first round.
+          # Inert in this repo: releases go out via changesets and there is no
+          # production branch, so BASE is always main and this always picks
+          # Opus. Kept verbatim so the file stays diffable against the
+          # dotrequirements copy; delete it only if this repo grows a
+          # genuinely different release flow.
+          if [ "$BASE" = "production" ] && [ "$count" = "0" ]; then
+            echo "model=claude-fable-5" >> "$GITHUB_OUTPUT"
+          else
+            echo "model=claude-opus-5" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.decide.outputs.run == 'true'
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        if: steps.decide.outputs.run == 'true'
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: "/ci-review-pr ${{ github.event.pull_request.number }}"
+          # The run log is the only visibility into a review that goes wrong.
+          show_full_output: true
+          claude_args: >-
+            --model ${{ steps.decide.outputs.model }}
+            --allowedTools "Agent,Skill,Bash,Read,Grep,Glob,TodoWrite"
+        env:
+          # Unconfirmed-but-cheap insurance: one smoke run returned while its
+          # finder subagents were still in flight, posting nothing. This forces
+          # the review pipeline to run in the foreground so the process waits.
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+
+      # A green check must mean a review was submitted. The action exits 0
+      # even when the agent posts nothing — e.g. the base branch's .claude/
+      # (restored by the action because the PR head is untrusted) lacks the
+      # ci-review-pr skill, making the prompt an unknown command, or the agent
+      # returns before posting. Assert the outcome, not any one cause.
+      #
+      # This is the step this repo most needed: the workflow it replaces ran
+      # green three times over four months while posting nothing at all.
+      - name: Assert a review was submitted
+        if: steps.decide.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          PRIOR: ${{ steps.decide.outputs.prior }}
+          REREVIEW: ${{ steps.decide.outputs.rereview }}
+        run: |
+          # pipefail, as in the decide step: without it a transient gh api
+          # failure yields an empty count and this assertion exits green
+          # while certifying a review that was never posted.
+          set -o pipefail
+          reviews=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" \
+            | jq '(add // []) | map(select(.user.login == "claude[bot]"))')
+          after=$(echo "$reviews" | jq 'length')
+          last_state=$(echo "$reviews" | jq -r 'last | .state // "NONE"')
+          # The skill's legitimate silences: the PR closed mid-run, or an
+          # approval landed between the gate and the agent's own backstop.
+          # Not on a re-review round: there the standing APPROVED is the very
+          # review being reopened, not a licence for silence.
+          pr_state=$(gh pr view "$PR" --json state --jq .state)
+          if [ "$pr_state" != "OPEN" ] || { [ "$last_state" = "APPROVED" ] && [ "$REREVIEW" != "true" ]; }; then
+            echo 'Skipping: the review agent was entitled to post nothing.'
+            exit 0
+          fi
+          if [ "$after" -le "$PRIOR" ]; then
+            echo '::error::No claude[bot] review was submitted this run. Check the action log above: if it shows "Unknown command: /ci-review-pr", the base branch lacks .claude/skills/ci-review-pr/ (the action restores .claude/ from the base) — expected on the PR that introduces this workflow, and self-healing once it merges to main.'
+            exit 1
+          fi
+          echo "claude[bot] reviews: $PRIOR before, $after after."
