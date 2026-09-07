@@ -6,7 +6,7 @@ import {
   parseJsonOutput,
   type AgentBrowserExec,
   type AgentBrowserExecResult,
-} from "../src/demo/agentBrowserClient.js";
+} from "../src/agentBrowserClient.js";
 
 const ok = (stdout: string): AgentBrowserExecResult => ({
   stdout,

@@ -9,10 +9,10 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { renderTimeline } from "../src/demo/render.js";
-import type { ExecResult, ExecRunner } from "../src/demo/render.js";
-import type { TTSProvider } from "../src/demo/tts.js";
-import type { CapturedFrame, TimelineEntry } from "../src/demo/recorder.js";
+import { renderTimeline } from "../src/render.js";
+import type { ExecResult, ExecRunner } from "../src/render.js";
+import type { TTSProvider } from "../src/tts.js";
+import type { CapturedFrame, TimelineEntry } from "../src/timeline.js";
 
 function makeTimeline(): {
   timeline: TimelineEntry[];
@@ -62,13 +62,12 @@ const PROBE_STDERR =
  * a placeholder mp4 to whatever output path appears last in the args.
  */
 function makeDefaultExec(): {
-  exec: ExecRunner & { mock: { calls: Array<[string, ReadonlyArray<string>]> } };
+  exec: ExecRunner & {
+    mock: { calls: Array<[string, ReadonlyArray<string>]> };
+  };
 } {
   const calls: Array<[string, ReadonlyArray<string>]> = [];
-  const fn = (
-    bin: string,
-    args: ReadonlyArray<string>,
-  ): ExecResult => {
+  const fn = (bin: string, args: ReadonlyArray<string>): ExecResult => {
     calls.push([bin, args]);
     const isProbe = args.length === 2 && args[0] === "-i";
     if (isProbe) {
@@ -83,9 +82,11 @@ function makeDefaultExec(): {
     return { stdout: "", stderr: "", status: 0 };
   };
   Object.defineProperty(fn, "mock", { value: { calls } });
-  return { exec: fn as unknown as ExecRunner & {
-    mock: { calls: Array<[string, ReadonlyArray<string>]> };
-  } };
+  return {
+    exec: fn as unknown as ExecRunner & {
+      mock: { calls: Array<[string, ReadonlyArray<string>]> };
+    },
+  };
 }
 
 describe("renderTimeline", () => {
@@ -173,13 +174,15 @@ describe("renderTimeline", () => {
     });
 
     const calls = exec.mock.calls;
-    const probeCalls = calls.filter(([, args]) =>
-      args.length === 2 && args[0] === "-i",
+    const probeCalls = calls.filter(
+      ([, args]) => args.length === 2 && args[0] === "-i",
     );
     const encodeCalls = calls.filter(([, args]) => args.includes("libx264"));
     const concatCalls = calls.filter(
       ([, args]) =>
-        args.includes("concat") && args.includes("copy") && !args.includes("libx264"),
+        args.includes("concat") &&
+        args.includes("copy") &&
+        !args.includes("libx264"),
     );
 
     expect(probeCalls).toHaveLength(2);
@@ -259,10 +262,7 @@ describe("renderTimeline", () => {
       keepIntermediates: true,
     });
 
-    const segmentsList = readFileSync(
-      join(outputDir, "segments.txt"),
-      "utf8",
-    );
+    const segmentsList = readFileSync(join(outputDir, "segments.txt"), "utf8");
     const lines = segmentsList.split("\n");
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatch(/segment-0\.mp4/);
@@ -500,7 +500,10 @@ describe("renderTimeline frame encodings", () => {
       return { stdout: "", stderr: "", status: 0 };
     };
     const tts: TTSProvider = {
-      speak: async () => ({ audio: new Uint8Array([1, 2, 3]), extension: "mp3" }),
+      speak: async () => ({
+        audio: new Uint8Array([1, 2, 3]),
+        extension: "mp3",
+      }),
     };
     const entry: TimelineEntry = {
       instruction: "x",
@@ -511,7 +514,11 @@ describe("renderTimeline frame encodings", () => {
       segmentDuration: 0.1,
     };
     const frames: CapturedFrame[] = [
-      { timestamp: 1010, data: Buffer.from("j").toString("base64"), format: "jpeg" },
+      {
+        timestamp: 1010,
+        data: Buffer.from("j").toString("base64"),
+        format: "jpeg",
+      },
       { timestamp: 1050, data: Buffer.from("p").toString("base64") },
     ];
     try {
@@ -524,11 +531,18 @@ describe("renderTimeline frame encodings", () => {
         keepIntermediates: true,
         ffmpegPath: "/fake/ffmpeg",
       });
-      const list = readFileSync(join(outputDir, "segment-0-frames", "frames.txt"), "utf8");
+      const list = readFileSync(
+        join(outputDir, "segment-0-frames", "frames.txt"),
+        "utf8",
+      );
       expect(list).toMatch(/frame-000\.jpg/);
       expect(list).toMatch(/frame-001\.png/);
-      expect(existsSync(join(outputDir, "segment-0-frames", "frame-000.jpg"))).toBe(true);
-      expect(existsSync(join(outputDir, "segment-0-frames", "frame-001.png"))).toBe(true);
+      expect(
+        existsSync(join(outputDir, "segment-0-frames", "frame-000.jpg")),
+      ).toBe(true);
+      expect(
+        existsSync(join(outputDir, "segment-0-frames", "frame-001.png")),
+      ).toBe(true);
     } finally {
       rmSync(outputDir, { recursive: true, force: true });
     }

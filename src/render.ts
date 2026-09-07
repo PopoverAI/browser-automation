@@ -1,17 +1,12 @@
 import { spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import ffmpegPath from "ffmpeg-static";
 
-import type { CapturedFrame, TimelineEntry } from "./recorder.js";
+import type { CapturedFrame, TimelineEntry } from "./timeline.js";
 import { createOpenAITTS, type TTSProvider } from "./tts.js";
 
 /**
@@ -166,10 +161,14 @@ export async function renderTimeline(
     const finalPath = join(outputDir, "final.mp4");
     runChecked(exec, ffmpeg, [
       "-y",
-      "-f", "concat",
-      "-safe", "0",
-      "-i", segmentListPath,
-      "-c", "copy",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-i",
+      segmentListPath,
+      "-c",
+      "copy",
       finalPath,
     ]);
 
@@ -297,7 +296,10 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
       const lastOffset = (segmentFrames[j].timestamp - firstTs) / 1000;
       duration = audioSeconds - lastOffset + LAST_FRAME_TAIL;
     }
-    duration = Math.max(MIN_FRAME_DURATION, Math.min(duration, MAX_FRAME_DURATION));
+    duration = Math.max(
+      MIN_FRAME_DURATION,
+      Math.min(duration, MAX_FRAME_DURATION),
+    );
     concatLines.push(`file '${escapeConcatPath(framePaths[j])}'`);
     concatLines.push(`duration ${duration.toFixed(3)}`);
   }
@@ -312,17 +314,28 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
   const segmentPath = join(outputDir, `segment-${index}.mp4`);
   runChecked(exec, ffmpeg, [
     "-y",
-    "-f", "concat",
-    "-safe", "0",
-    "-i", concatFilePath,
-    "-i", audioPath,
-    "-map", "0:v",
-    "-map", "1:a",
-    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-    "-af", "apad",
-    "-c:v", "libx264",
-    "-pix_fmt", "yuv420p",
-    "-c:a", "aac",
+    "-f",
+    "concat",
+    "-safe",
+    "0",
+    "-i",
+    concatFilePath,
+    "-i",
+    audioPath,
+    "-map",
+    "0:v",
+    "-map",
+    "1:a",
+    "-vf",
+    "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+    "-af",
+    "apad",
+    "-c:v",
+    "libx264",
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
     "-shortest",
     segmentPath,
   ]);

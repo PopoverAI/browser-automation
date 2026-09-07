@@ -4,13 +4,23 @@ import {
   AgentBrowserClient,
   type BatchCommandResult,
 } from "./agentBrowserClient.js";
-import type {
-  CapturedFrame,
-  DemoRenderOptions,
-  RenderResult,
-  TimelineEntry,
-} from "./recorder.js";
-import { renderTimeline } from "./render.js";
+import { renderTimeline, type RenderTimelineOptions } from "./render.js";
+import type { CapturedFrame, TimelineEntry } from "./timeline.js";
+
+export type DemoRenderOptions = Omit<
+  RenderTimelineOptions,
+  "timeline" | "frames"
+>;
+
+export interface RenderResult {
+  /** Absolute path to the rendered mp4. */
+  videoPath: string;
+  /** Directory the mp4 (and any kept intermediates) live in. */
+  outputDir: string;
+  timeline: TimelineEntry[];
+  /** Raw frame buffer — exposed primarily for testing/inspection. */
+  frames: CapturedFrame[];
+}
 
 export interface AttachAgentBrowserDemoRecorderOptions {
   /** Client used to drive agent-browser. Default: `new AgentBrowserClient()`. */
@@ -100,10 +110,9 @@ export function formatCommands(
 /**
  * Attach a demo recorder to the agent-browser daemon's viewport stream.
  *
- * Unlike `attachDemoRecorder` (Stagehand), nothing here reaches into a
- * browser library: the daemon owns the browser (local, `--cdp`, or any
- * `--provider`), and this recorder only consumes its `stream` WebSocket and
- * drives actions through `agent-browser batch`. Frames are stamped with
+ * Nothing here reaches into a browser library: the daemon owns the browser
+ * (local, `--cdp`, or any `--provider`), and this recorder only consumes its
+ * `stream` WebSocket and drives actions through `agent-browser batch`. Frames are stamped with
  * `Date.now()` on receipt — agent-browser's frame metadata carries no usable
  * timestamp as of 0.36 — and step boundaries are stamped from the same clock
  * around each batch, so segment bucketing is self-consistent.

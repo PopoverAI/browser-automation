@@ -1,7 +1,7 @@
 {
   "name": "@popoverai/browser-automation",
   "version": "0.13.11",
-  "description": "MCP server for AI browser automation. Fork of @browserbasehq/mcp-server-browserbase with LOCAL mode default, Playwright federation, and Vercel header injection.",
+  "description": "Narrated demo videos from agent-browser flows: run steps as agent-browser batches, capture the viewport stream, render an mp4 with per-step TTS.",
   "license": "Apache-2.0",
   "author": "Popover AI",
   "contributors": [
@@ -18,38 +18,19 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./scenario": {
-      "types": "./dist/scenario-entry.d.ts",
-      "import": "./dist/scenario-entry.js"
-    },
-    "./script": {
-      "types": "./dist/script.d.ts",
-      "import": "./dist/script.js"
-    },
-    "./demo": {
-      "types": "./dist/demo/index.d.ts",
-      "import": "./dist/demo/index.js"
-    },
     "./package.json": "./package.json"
   },
   "bin": {
-    "browser-automation": "cli.js",
-    "browser-demo": "dist/demo/cli.js"
+    "browser-demo": "dist/cli.js"
   },
   "files": [
-    "assets",
     "README.md",
-    "dist",
-    "cli.js",
-    "config.d.ts"
+    "dist"
   ],
   "scripts": {
-    "build": "tsc && shx chmod +x dist/*.js dist/demo/cli.js",
+    "build": "tsc && shx chmod +x dist/cli.js",
     "prepare": "husky && pnpm build",
     "watch": "tsc --watch",
-    "smithery": "npx @smithery/cli dev src/index.ts",
-    "inspector": "npx @modelcontextprotocol/inspector build/index.js",
-    "evals": "tsx evals/run-evals.ts run --config evals/mcp-eval-basic.config.json && tsx evals/run-evals.ts run --config evals/mcp-eval-minimal.config.json && tsx evals/run-evals.ts run --config evals/mcp-eval.config.json",
     "test": "vitest run",
     "lint": "eslint . --ext .ts",
     "format": "prettier --write .",
@@ -68,33 +49,21 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.54",
-    "@browserbasehq/sdk": "^2.6.0",
-    "@browserbasehq/stagehand": "^3.1.0",
-    "@mcp-ui/server": "^5.10.0",
-    "@modelcontextprotocol/sdk": "^1.13.1",
-    "@ngrok/ngrok": "^1.4.1",
     "ai": "^6.0.169",
     "commander": "^14.0.0",
-    "dotenv": "^16.4.6",
     "ffmpeg-static": "^5.3.0",
-    "sharp": "^0.33.0",
-    "tsx": "^4.20.3",
     "ws": "^8.18.0",
     "zod": "^3.25.67"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.6",
     "@eslint/js": "^9.29.0",
-    "@smithery/cli": "^1.2.15",
     "@types/node": "^24.10.1",
     "@types/ws": "^8.5.13",
-    "chalk": "^5.3.0",
     "eslint": "^9.29.0",
-    "eslint-plugin-react": "^7.37.5",
     "globals": "^16.2.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.1.2",
-    "mcpvals": "^0.4.0",
     "prettier": "^3.6.1",
     "shx": "^0.3.4",
     "typescript": "^5.6.2",

@@ -6,12 +6,12 @@ import {
   type AgentBrowserExec,
   type AgentBrowserExecResult,
   type BatchCommandResult,
-} from "../src/demo/agentBrowserClient.js";
+} from "../src/agentBrowserClient.js";
 import {
   attachAgentBrowserDemoRecorder,
   DemoStepError,
   formatCommands,
-} from "../src/demo/agentBrowserRecorder.js";
+} from "../src/agentBrowserRecorder.js";
 
 /**
  * A fake agent-browser daemon stream: a WebSocket server that can push

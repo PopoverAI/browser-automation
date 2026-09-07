@@ -31,10 +31,12 @@ export interface TTSProvider {
  * is available, so callers see a clear error instead of an opaque SDK
  * exception on the first `speak()` call.
  */
-export function createOpenAITTS(opts: {
-  apiKey?: string;
-  model?: string;
-} = {}): TTSProvider {
+export function createOpenAITTS(
+  opts: {
+    apiKey?: string;
+    model?: string;
+  } = {},
+): TTSProvider {
   const apiKey = opts.apiKey ?? process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -105,11 +107,15 @@ export function createSilentTTS(opts: SilentTTSOptions = {}): TTSProvider {
       try {
         const r = spawnSync(ffmpeg, [
           "-hide_banner",
-          "-loglevel", "error",
+          "-loglevel",
+          "error",
           "-y",
-          "-f", "lavfi",
-          "-i", "anullsrc=r=24000:cl=mono",
-          "-t", seconds.toFixed(3),
+          "-f",
+          "lavfi",
+          "-i",
+          "anullsrc=r=24000:cl=mono",
+          "-t",
+          seconds.toFixed(3),
           tmp,
         ]);
         if (r.error) throw r.error;

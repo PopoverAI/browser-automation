@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { existsSync } from "node:fs";
 
-import { createSilentTTS, estimateSpeechSeconds } from "../src/demo/tts.js";
+import { createSilentTTS, estimateSpeechSeconds } from "../src/tts.js";
 
 describe("estimateSpeechSeconds", () => {
   it("scales with word count and respects the floor", () => {
