@@ -5,7 +5,7 @@
 Versions are cut by hand with `npm version` / `npm publish` (see
 CLAUDE.md → Releases). This package is 0.x: a minor bump is a breaking change.
 
-## 0.14.0 (unreleased)
+## 0.14.0 — 2026-09-08
 
 **Breaking.** The package is now `browser-demo`: narrated demo videos from
 agent-browser flows. Everything else is gone.
