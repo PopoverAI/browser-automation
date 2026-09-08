@@ -94,9 +94,24 @@ guide` / `schema` are how a CLI-only agent learns the tool.
 
 ## Releases
 
-Versioning and publishing go through **changesets**: `pnpm changeset` to record
-a change, `pnpm version:packages` to apply, `pnpm release` to publish. There is
-no `production` branch — `main` is the trunk.
+Publishing is manual, from a checkout of `main`, with npm's own tooling — the
+way every 0.13.x release was cut:
+
+```bash
+npm version <patch|minor>   # bumps package.json, commits "x.y.z", tags vx.y.z
+npm publish                 # prepublishOnly rebuilds; ships README.md, SKILL.md, dist
+git push --follow-tags
+```
+
+The package is 0.x, so **breaking changes bump the minor** (SemVer item 4;
+`^0.13.x` ranges exclude 0.14.0). 1.0.0 would declare the API stable, which it
+is not. Add a `CHANGELOG.md` entry under the new version in the same commit as
+the bump — the changelog is the release note; there is no other.
+
+There is no `production` branch — `main` is the trunk — and no changesets: the
+scaffolding inherited from the upstream fork was never initialised and has been
+removed. (`pr-review.yml` still mentions changesets in a comment on a branch
+that is inert here; it is kept verbatim for diffability with dotrequirements.)
 
 ## CI
 
