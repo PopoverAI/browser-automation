@@ -131,7 +131,12 @@ async function main(file: string, opts: CliOptions): Promise<void> {
       index: i,
       instruction: e.instruction,
       narrative: e.narrative,
-      segmentDuration: e.segmentDuration,
+      /** Wall-clock seconds the step took to run (capture window). */
+      captureSeconds: e.segmentDuration,
+      /** Seconds of narration audio before padding. */
+      narrationSeconds: result.segments[i]?.narrationSeconds,
+      /** Length of this segment in the final video. */
+      renderedSeconds: result.segments[i]?.renderedSeconds,
       frameCount: e.frameCount,
     })),
   };
@@ -140,7 +145,7 @@ async function main(file: string, opts: CliOptions): Promise<void> {
   } else {
     for (const s of summary.segments) {
       log(
-        `  segment ${s.index}: ${s.frameCount} frames, ${s.segmentDuration.toFixed(1)}s — ${s.instruction}`,
+        `  segment ${s.index}: ${s.frameCount} frames, ${s.captureSeconds.toFixed(1)}s captured, ${s.narrationSeconds?.toFixed(1) ?? "?"}s narration → ${s.renderedSeconds?.toFixed(1) ?? "?"}s rendered — ${s.instruction}`,
       );
     }
     process.stdout.write(result.videoPath + "\n");

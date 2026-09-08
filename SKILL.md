@@ -48,8 +48,11 @@ browser-demo record FILE      # record (also: browser-demo FILE)
    ```bash
    OPENAI_API_KEY=… browser-demo record steps.json --out ./demo
    ```
-5. Report the path printed on stdout. `--json` gives a summary with per-step
-   frame counts; a step with `frameCount: 0` produced no visible change.
+5. Report the path printed on stdout. `--json` gives a per-step summary:
+   `captureSeconds` (how long the commands took), `narrationSeconds` (the
+   speech), `renderedSeconds` (the segment's length in the video — the larger
+   of the two, plus a short tail), and `frameCount`; a step with
+   `frameCount: 0` produced no visible change.
 
 ## Steps file
 
