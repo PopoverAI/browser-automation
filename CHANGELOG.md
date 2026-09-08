@@ -47,6 +47,14 @@ speech?: SpeechOptions })` takes any AI SDK speech model; omit it for a
 
 Fixed
 
+- Narrated renders came out with **no audio stream at all** on ffmpeg-static's
+  6.0 build (macOS): `-shortest` made that build write zero audio packets and
+  drop the AAC stream, with exit 0; the 7.0.2 build (Linux) instead let the
+  padded audio overrun the video. Segments are now encoded in two passes —
+  video alone, measured, then narration padded to exactly that length — with
+  no `-shortest` involved. Found by the first real narrated run before
+  publishing; the unit tests stub ffmpeg, so a real-ffmpeg integration test
+  now runs wherever a binary is present.
 - Rendered segments no longer end 1–2 s before their narration: `-t <audio
 duration>` made ffmpeg 6 drop the held last frame. Segment length is now
   max(video, audio) — the last frame is held to the narration's end, audio is

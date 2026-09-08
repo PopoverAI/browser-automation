@@ -222,6 +222,9 @@ describe("renderTimeline", () => {
       ([, args]) => args.length === 2 && args[0] === "-i",
     );
     const encodeCalls = calls.filter(([, args]) => args.includes("libx264"));
+    const muxCalls = calls.filter(
+      ([, args]) => args.includes("copy") && args.includes("aac"),
+    );
     const concatCalls = calls.filter(
       ([, args]) =>
         args.includes("concat") &&
@@ -229,8 +232,10 @@ describe("renderTimeline", () => {
         !args.includes("libx264"),
     );
 
-    expect(probeCalls).toHaveLength(2);
+    // Per segment: probe the narration, encode video, probe the video, mux.
+    expect(probeCalls).toHaveLength(4);
     expect(encodeCalls).toHaveLength(2);
+    expect(muxCalls).toHaveLength(2);
     expect(concatCalls).toHaveLength(1);
   });
 
@@ -253,11 +258,22 @@ describe("renderTimeline", () => {
     expect(encodeCall).toBeDefined();
     const encodeArgs = encodeCall![1] as ReadonlyArray<string>;
     expect(encodeArgs).toContain("scale=trunc(iw/2)*2:trunc(ih/2)*2");
-    // Segment length is max(video, audio): audio is padded and the encode
-    // stops at the video's end, whose last frame is held to the audio length.
-    expect(encodeArgs).toContain("apad");
-    expect(encodeArgs).toContain("-shortest");
+    // Video is encoded alone (no audio, no -t, no -shortest) …
+    expect(encodeArgs).toContain("-an");
+    expect(encodeArgs).not.toContain("-shortest");
     expect(encodeArgs).not.toContain("-t");
+    // … then muxed with narration padded to exactly the measured video
+    // length. Never `-shortest`: ffmpeg-static 6.0 dropped the whole audio
+    // stream under it, and 7.0.2 let the padding overrun.
+    const muxCall = exec.mock.calls.find(
+      ([, args]) => args.includes("copy") && args.includes("aac"),
+    );
+    expect(muxCall).toBeDefined();
+    const muxArgs = muxCall![1] as ReadonlyArray<string>;
+    expect(muxArgs.some((a) => /^apad=whole_dur=\d+\.\d{3}$/.test(a))).toBe(
+      true,
+    );
+    expect(muxArgs).not.toContain("-shortest");
   });
 
   it("holds the last frame until the narration ends (plus a short tail)", async () => {
@@ -496,7 +512,7 @@ describe("renderTimeline", () => {
 
     await expect(
       renderTimeline({ timeline, frames, outputDir, speech, exec }),
-    ).rejects.toThrow(/could not parse audio duration/);
+    ).rejects.toThrow(/could not parse duration/);
   });
 
   it("throws when timeline is empty", async () => {

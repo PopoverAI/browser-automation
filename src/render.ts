@@ -67,6 +67,10 @@ export interface RenderedSegment {
   audioPath?: string;
   /** Number of frames actually included in the segment. */
   frameCount: number;
+  /** Length of the rendered segment in seconds (video and padded audio alike). */
+  renderedSeconds: number;
+  /** Length of the narration audio before padding, in seconds. */
+  narrationSeconds: number;
 }
 
 export interface RenderTimelineResult {
@@ -263,24 +267,8 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
     framePaths.push(framePath);
   }
 
-  // 3. Probe audio duration. ffmpeg-static doesn't ship ffprobe, so we run
-  //    `ffmpeg -i <audio>` (no output specified — exits non-zero by design)
-  //    and parse the `Duration: HH:MM:SS.ms` line out of stderr in Node.
-  //    Don't use a shell pipe: anything user-supplied could otherwise be
-  //    interpreted as shell metacharacters.
-  const probe = exec(ffmpeg, ["-i", audioPath]);
-  const durationMatch = probe.stderr.match(
-    /Duration:\s*(\d{2}):(\d{2}):(\d{2}\.\d{2})/,
-  );
-  if (!durationMatch) {
-    throw new Error(
-      `renderTimeline: could not parse audio duration from ffmpeg output for segment ${index}. stderr was: ${probe.stderr.slice(0, 500)}`,
-    );
-  }
-  const audioSeconds =
-    Number(durationMatch[1]) * 3600 +
-    Number(durationMatch[2]) * 60 +
-    Number(durationMatch[3]);
+  // 3. Probe the narration's duration.
+  const audioSeconds = probeDurationSeconds(exec, ffmpeg, audioPath, index);
 
   // 4. Build the concat demuxer file with per-frame durations.
   //
@@ -328,8 +316,18 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
   const concatFilePath = join(framesDir, "frames.txt");
   writeFileSync(concatFilePath, concatLines.join("\n"));
 
-  // 5. Encode the segment.
-  const segmentPath = join(outputDir, `segment-${index}.mp4`);
+  // 5a. Encode the video track on its own from the concat list.
+  //
+  //     Two passes on purpose. The obvious single pass — video + narration in
+  //     one encode with `apad` and `-shortest` to stop the padding at the
+  //     video's end — depends on ffmpeg's "shortest" bookkeeping, which
+  //     differs by build: ffmpeg-static's 6.0 (macOS) wrote zero audio
+  //     packets and shipped a video-only mp4 with exit 0; its 7.0.2 (Linux)
+  //     let the padded audio run seconds past the video. And the video's
+  //     real length isn't `laidDown` either: the concat demuxer's trailing
+  //     entry adds a fraction of a second that varies with the frame spacing.
+  //     So: make the video, measure it, pad the audio to exactly that.
+  const videoOnlyPath = join(framesDir, "video.mp4");
   runChecked(exec, ffmpeg, [
     "-y",
     "-f",
@@ -338,23 +336,39 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
     "0",
     "-i",
     concatFilePath,
+    "-vf",
+    "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+    "-c:v",
+    "libx264",
+    "-pix_fmt",
+    "yuv420p",
+    "-an",
+    videoOnlyPath,
+  ]);
+
+  // 5b. Measure what ffmpeg actually produced.
+  const videoSeconds = probeDurationSeconds(exec, ffmpeg, videoOnlyPath, index);
+
+  // 5c. Mux: copy the video, pad the narration with silence to its length.
+  //     `apad=whole_dur` is deterministic on every build; the streams end
+  //     together without any "shortest" logic involved.
+  const segmentPath = join(outputDir, `segment-${index}.mp4`);
+  runChecked(exec, ffmpeg, [
+    "-y",
+    "-i",
+    videoOnlyPath,
     "-i",
     audioPath,
     "-map",
     "0:v",
     "-map",
     "1:a",
-    "-vf",
-    "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-    "-af",
-    "apad",
     "-c:v",
-    "libx264",
-    "-pix_fmt",
-    "yuv420p",
+    "copy",
+    "-af",
+    `apad=whole_dur=${videoSeconds.toFixed(3)}`,
     "-c:a",
     "aac",
-    "-shortest",
     segmentPath,
   ]);
 
@@ -363,7 +377,31 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
     segmentVideoPath: segmentPath,
     audioPath: audioPath,
     frameCount: segmentFrames.length,
+    renderedSeconds: videoSeconds,
+    narrationSeconds: audioSeconds,
   };
+}
+
+/**
+ * Duration of a media file in seconds. ffmpeg-static ships no ffprobe, so run
+ * `ffmpeg -i <file>` (no output — exits non-zero by design) and parse the
+ * `Duration: HH:MM:SS.ms` line from stderr in Node. No shell pipe: a
+ * user-supplied path must never reach a shell.
+ */
+function probeDurationSeconds(
+  exec: ExecRunner,
+  ffmpeg: string,
+  file: string,
+  index: number,
+): number {
+  const probe = exec(ffmpeg, ["-i", file]);
+  const m = probe.stderr.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2}\.\d{2})/);
+  if (!m) {
+    throw new Error(
+      `renderTimeline: could not parse duration of ${file} from ffmpeg output for segment ${index}. stderr was: ${probe.stderr.slice(0, 500)}`,
+    );
+  }
+  return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
 }
 
 function runChecked(

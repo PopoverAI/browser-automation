@@ -4,7 +4,11 @@ import {
   AgentBrowserClient,
   type BatchCommandResult,
 } from "./agentBrowserClient.js";
-import { renderTimeline, type RenderTimelineOptions } from "./render.js";
+import {
+  renderTimeline,
+  type RenderedSegment,
+  type RenderTimelineOptions,
+} from "./render.js";
 import type { SpeechOverrides } from "./speech.js";
 import type { CapturedFrame, TimelineEntry } from "./timeline.js";
 
@@ -21,6 +25,8 @@ export interface RenderResult {
   timeline: TimelineEntry[];
   /** Raw frame buffer — exposed primarily for testing/inspection. */
   frames: CapturedFrame[];
+  /** One per timeline entry: rendered/narration lengths, kept intermediates. */
+  segments: RenderedSegment[];
 }
 
 export interface AttachAgentBrowserDemoRecorderOptions {
@@ -311,6 +317,7 @@ export async function attachAgentBrowserDemoRecorder(
         outputDir: result.outputDir,
         timeline: [...entries],
         frames: [...frames],
+        segments: result.segments,
       };
     },
   };
