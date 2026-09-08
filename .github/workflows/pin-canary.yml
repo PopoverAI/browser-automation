@@ -1,0 +1,40 @@
+# TEMPORARY — delete before merge.
+#
+# Validates that pinning anthropics/claude-code-action to v1.0.217 works on
+# today's runners. The floating `v1` moved to v1.0.218 on 2026-09-08, which
+# bundles Claude Code 2.1.265; that build's native installer reports success
+# without creating ~/.local/bin, and the action then fails with ENOENT before
+# the reviewer starts (see PR #10's `review` check).
+#
+# Why a separate file: the real pr-review.yml can't be tested on a branch —
+# the action's server-side workflow validation (inside setupGitHubToken) skips
+# any run whose workflow file differs from main, and it runs *before* the
+# install step, so a pinned pr-review.yml on a PR proves nothing. Passing
+# `github_token` makes the action skip that OIDC exchange, so this file runs
+# the pinned action end to end. It runs as github-actions[bot], not
+# claude[bot], and posts nothing; the pass/fail of the job is the signal.
+name: pin-canary
+
+on:
+  pull_request:
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Run claude-code-action pinned to v1.0.217
+        uses: anthropics/claude-code-action@v1.0.217
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: "Reply with exactly the text: PIN CANARY OK. Do not use any tools."
+          show_full_output: true
+          claude_args: --model claude-opus-5
