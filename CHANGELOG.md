@@ -1,55 +1,64 @@
-# @browserbasehq/mcp-server-browserbase
+# Changelog
 
-## 2.4.3
+`@popoverai/browser-automation` — the `browser-demo` CLI and library.
 
-### Patch Changes
+Versions are cut by hand with `npm version` / `npm publish` (see
+CLAUDE.md → Releases). This package is 0.x: a minor bump is a breaking change.
 
-- chore: bump stagehand version (republish)
+## 0.14.0 (unreleased)
 
-## 2.4.1
+**Breaking.** The package is now `browser-demo`: narrated demo videos from
+agent-browser flows. Everything else is gone.
 
-### Patch Changes
+Removed
 
-- update stagehand version to 3.0.3, change screenshot tool to use CDP and scaling image to work with claude code
+- The MCP server and every `stagehand_*` tool (`act`, `extract`, `observe`,
+  `navigate`, `screenshot`, `agent`, `session`, `run_script`, `scenario`,
+  `demo_video`) and the `agent_browser_*` tools that rode on its session.
+- Stagehand scripts and scenarios (`defineScript`, `runScenario`), the
+  `./script` and `./scenario` subpath exports, `%var%` substitution.
+- Browserbase session management, the CDP proxy, Playwright federation, ngrok
+  tunnelling, Vercel header injection (use agent-browser's `--headers`).
+- The Claude Desktop extension, Smithery/Gemini manifests, `server.json`,
+  Dockerfile, evals, the `browser-automation` bin.
+- Dependencies: `@browserbasehq/sdk`, `@browserbasehq/stagehand`,
+  `@modelcontextprotocol/sdk`, `@mcp-ui/server`, `@ngrok/ngrok`, `sharp`,
+  `dotenv`, `tsx`, `@changesets/cli`.
 
-## 2.4.0
+Added
 
-### Minor Changes
+- `browser-demo` CLI: `record` (default), `validate`, `guide`, `schema`,
+  `example`. A steps file — agent-browser commands as argv arrays plus a
+  narration sentence per step — in; an mp4 out. Self-documenting for agents:
+  `--help` opens with a "Start here" block, `guide` prints the shipped
+  `SKILL.md`, `schema` prints a JSON Schema generated from the validator, a
+  failed step prints actionable hints.
+- Library: `attachAgentBrowserDemoRecorder`, `AgentBrowserClient`,
+  `renderTimeline`, `resolveSpeech`, `loadSpeechModel`, the steps-file schema.
+- Capture via agent-browser's viewport `stream` (not `record`, which reloads
+  the page into a fresh tab, needs ffmpeg on `PATH`, and captures at 10 fps).
+  Works against local Chrome, `--cdp <wsUrl>`, or any `agent-browser
+--provider`.
+- Narration through the AI SDK 7 `generateSpeech` seam: `renderTimeline({
+speech?: SpeechOptions })` takes any AI SDK speech model; omit it for a
+  silent track sized to the narration. Bundled providers: openai (default),
+  elevenlabs, lmnt, hume, deepgram, via `--tts <provider[:model]>`. Steps files
+  carry a `speech` block and per-step overrides.
 
-- feat: adding stagehand agent tool
+Fixed
 
-## 2.3.0
+- Rendered segments no longer end 1–2 s before their narration: `-t <audio
+duration>` made ffmpeg 6 drop the held last frame. Segment length is now
+  max(video, audio) — the last frame is held to the narration's end, audio is
+  padded past a longer action.
+- Renderer frame-gap floor lowered from 100 ms to 20 ms so a 30 fps capture is
+  no longer played back at one-third speed.
 
-### Minor Changes
+## 0.13.x and earlier
 
-- upgrade to stagehand v3
-
-## 2.2.0
-
-### Minor Changes
-
-- Remove multisession tools, remove prompts sampling, simplify tool descriptions for better context, add support if google apikey set, latest version of stagehand, remove custom availmodelschema to use stagehand model type instead.
-
-## 2.1.3
-
-### Patch Changes
-
-- Adding docker deployment support
-
-## 2.1.2
-
-### Patch Changes
-
-- fixing screenshot map behavior
-
-## 2.1.1
-
-### Patch Changes
-
-- adding MCP server to official registry
-
-## 2.1.0
-
-### Minor Changes
-
-- adding changesets, MCP UI for session create
+Releases of the MCP server this package used to be — a fork of
+[@browserbasehq/mcp-server-browserbase](https://github.com/browserbase/mcp-server-browserbase)
+with LOCAL mode as the default, Playwright federation, Vercel header injection,
+Stagehand scripts/scenarios, and (from 0.13.11) the first narrated demo-video
+pipeline over Stagehand. The upstream project's changelog covers the code this
+fork started from.

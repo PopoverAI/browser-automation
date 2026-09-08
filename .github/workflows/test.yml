@@ -27,10 +27,10 @@ jobs:
         uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
-        # 22, matching the runtime this package actually ships on: the
-        # Dockerfile builds on node:22-alpine and runs on
-        # distroless/nodejs22-debian12. (dotrequirements pins 24 for Vercel;
-        # that reason doesn't apply here.)
+        # 22: the floor `ai@7` sets (engines >=22) and what the package is
+        # exercised on. agent-browser itself asks for 24 but is not run in
+        # tests. (dotrequirements pins 24 for Vercel; that reason doesn't
+        # apply here.)
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -56,13 +56,10 @@ jobs:
       - name: Run tests
         run: pnpm test
 
-  # Deliberately absent: a lint job.
-  #
-  # `pnpm lint` currently fails on main with 4 pre-existing errors — one unused
-  # import in src/sessionManager.ts and three no-explicit-any hits in
-  # src/sessionManager.ts and src/tools/navigate.ts, all on genuinely untyped
-  # third-party internals (Stagehand's `mainSession`, a Playwright context).
-  # Wiring lint up now would paint every PR red on arrival, which trains
-  # everyone to ignore red — the same failure, inverted, as the review workflow
-  # this repo just replaced, which ran green for four months while posting
-  # nothing. Fix the four, then add the job in the same change.
+      - name: Lint
+        # Added once lint went green: the four pre-existing errors that kept
+        # this job out (untyped Stagehand/Playwright internals in
+        # src/sessionManager.ts and src/tools/navigate.ts) left with the
+        # Stagehand surface. Keep it green — a red-on-arrival gate trains
+        # everyone to ignore red.
+        run: pnpm lint

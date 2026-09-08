@@ -9,10 +9,15 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { renderTimeline } from "../src/demo/render.js";
-import type { ExecResult, ExecRunner } from "../src/demo/render.js";
-import type { TTSProvider } from "../src/demo/tts.js";
-import type { CapturedFrame, TimelineEntry } from "../src/demo/recorder.js";
+import { renderTimeline } from "../src/render.js";
+import type { ExecResult, ExecRunner } from "../src/render.js";
+import type { SpeechModel } from "ai";
+import { MockSpeechModelV4 } from "ai/test";
+
+type SpeechModelV4Like = Extract<SpeechModel, { specificationVersion: "v4" }>;
+
+import type { SpeechOptions } from "../src/speech.js";
+import type { CapturedFrame, TimelineEntry } from "../src/timeline.js";
 
 function makeTimeline(): {
   timeline: TimelineEntry[];
@@ -62,13 +67,12 @@ const PROBE_STDERR =
  * a placeholder mp4 to whatever output path appears last in the args.
  */
 function makeDefaultExec(): {
-  exec: ExecRunner & { mock: { calls: Array<[string, ReadonlyArray<string>]> } };
+  exec: ExecRunner & {
+    mock: { calls: Array<[string, ReadonlyArray<string>]> };
+  };
 } {
   const calls: Array<[string, ReadonlyArray<string>]> = [];
-  const fn = (
-    bin: string,
-    args: ReadonlyArray<string>,
-  ): ExecResult => {
+  const fn = (bin: string, args: ReadonlyArray<string>): ExecResult => {
     calls.push([bin, args]);
     const isProbe = args.length === 2 && args[0] === "-i";
     if (isProbe) {
@@ -83,22 +87,28 @@ function makeDefaultExec(): {
     return { stdout: "", stderr: "", status: 0 };
   };
   Object.defineProperty(fn, "mock", { value: { calls } });
-  return { exec: fn as unknown as ExecRunner & {
-    mock: { calls: Array<[string, ReadonlyArray<string>]> };
-  } };
+  return {
+    exec: fn as unknown as ExecRunner & {
+      mock: { calls: Array<[string, ReadonlyArray<string>]> };
+    },
+  };
 }
 
 describe("renderTimeline", () => {
   let outputDir: string;
-  let tts: TTSProvider;
+  let doGenerate: ReturnType<typeof vi.fn<SpeechModelV4Like["doGenerate"]>>;
+  let speech: SpeechOptions;
 
   beforeEach(() => {
     outputDir = mkdtempSync(join(tmpdir(), "demo-render-test-"));
-    tts = {
-      speak: vi.fn(async (text: string) => ({
-        audio: new Uint8Array(Buffer.from(`audio-for-${text}`)),
-        extension: "mp3",
-      })),
+    doGenerate = vi.fn<SpeechModelV4Like["doGenerate"]>(async ({ text }) => ({
+      audio: new Uint8Array(Buffer.from(`audio-for-${text}`)),
+      warnings: [],
+      response: { timestamp: new Date(), modelId: "mock" },
+    }));
+    speech = {
+      model: new MockSpeechModelV4({ doGenerate }),
+      voice: "test-voice",
     };
   });
 
@@ -108,7 +118,7 @@ describe("renderTimeline", () => {
     }
   });
 
-  it("invokes TTS for each timeline entry", async () => {
+  it("synthesises narration for each timeline entry through the speech model", async () => {
     const { timeline, frames } = makeTimeline();
     const { exec } = makeDefaultExec();
 
@@ -116,18 +126,53 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
 
-    expect(tts.speak).toHaveBeenCalledTimes(2);
-    expect((tts.speak as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe(
-      "navigating to login",
-    );
-    expect((tts.speak as ReturnType<typeof vi.fn>).mock.calls[1][0]).toBe(
-      "submitting the form",
-    );
+    expect(doGenerate).toHaveBeenCalledTimes(2);
+    const texts = doGenerate.mock.calls.map((c) => c[0].text);
+    expect(texts).toEqual(["navigating to login", "submitting the form"]);
+    // Render-level options reach the model; the default output format is mp3.
+    expect(doGenerate.mock.calls[0][0]).toMatchObject({
+      voice: "test-voice",
+      outputFormat: "mp3",
+    });
+  });
+
+  it("merges per-entry speech overrides over the render's speech options", async () => {
+    const { timeline, frames } = makeTimeline();
+    const { exec } = makeDefaultExec();
+    timeline[1] = {
+      ...timeline[1],
+      speech: { voice: "other", language: "es" },
+    };
+
+    await renderTimeline({ timeline, frames, outputDir, speech, exec });
+
+    expect(doGenerate.mock.calls[0][0]).toMatchObject({ voice: "test-voice" });
+    expect(doGenerate.mock.calls[1][0]).toMatchObject({
+      voice: "other",
+      language: "es",
+    });
+  });
+
+  it("renders a silent wav track when no speech is configured", async () => {
+    const { timeline, frames } = makeTimeline();
+    const { exec } = makeDefaultExec();
+
+    const result = await renderTimeline({
+      timeline,
+      frames,
+      outputDir,
+      exec,
+      keepIntermediates: true,
+    });
+
+    const wav = readFileSync(join(outputDir, "audio-0.wav"));
+    expect(wav.subarray(0, 4).toString()).toBe("RIFF");
+    expect(result.segments[0].audioPath).toMatch(/audio-0\.wav$/);
   });
 
   it("filters frames to each entry's [startTime, endTime] window", async () => {
@@ -138,7 +183,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -167,19 +212,21 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
 
     const calls = exec.mock.calls;
-    const probeCalls = calls.filter(([, args]) =>
-      args.length === 2 && args[0] === "-i",
+    const probeCalls = calls.filter(
+      ([, args]) => args.length === 2 && args[0] === "-i",
     );
     const encodeCalls = calls.filter(([, args]) => args.includes("libx264"));
     const concatCalls = calls.filter(
       ([, args]) =>
-        args.includes("concat") && args.includes("copy") && !args.includes("libx264"),
+        args.includes("concat") &&
+        args.includes("copy") &&
+        !args.includes("libx264"),
     );
 
     expect(probeCalls).toHaveLength(2);
@@ -195,7 +242,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -206,8 +253,44 @@ describe("renderTimeline", () => {
     expect(encodeCall).toBeDefined();
     const encodeArgs = encodeCall![1] as ReadonlyArray<string>;
     expect(encodeArgs).toContain("scale=trunc(iw/2)*2:trunc(ih/2)*2");
-    expect(encodeArgs).toContain("-t");
-    expect(encodeArgs).toContain("00:00:02.50");
+    // Segment length is max(video, audio): audio is padded and the encode
+    // stops at the video's end, whose last frame is held to the audio length.
+    expect(encodeArgs).toContain("apad");
+    expect(encodeArgs).toContain("-shortest");
+    expect(encodeArgs).not.toContain("-t");
+  });
+
+  it("holds the last frame until the narration ends (plus a short tail)", async () => {
+    const { timeline, frames } = makeTimeline();
+    const { exec } = makeDefaultExec();
+    const outputDir = mkdtempSync(join(tmpdir(), "demo-render-hold-"));
+    try {
+      await renderTimeline({
+        timeline: [timeline[0]],
+        frames,
+        outputDir,
+        speech,
+        exec,
+        keepIntermediates: true,
+      });
+      const list = readFileSync(
+        join(outputDir, "segment-0-frames", "frames.txt"),
+        "utf8",
+      );
+      const durations = [...list.matchAll(/duration ([\d.]+)/g)].map((m) =>
+        Number(m[1]),
+      );
+      // Frames at 1010/1050/1090: two real 0.04s gaps (above the 20ms floor),
+      // then the last frame runs to the 2.5s narration end: 2.5 - 0.08 + 0.25.
+      expect(durations).toHaveLength(3);
+      expect(durations[0]).toBeCloseTo(0.04, 3);
+      expect(durations[1]).toBeCloseTo(0.04, 3);
+      expect(durations[2]).toBeCloseTo(2.67, 3);
+      // Trailing repeated file line so the last duration is honored.
+      expect(list.trim().endsWith("frame-002.png'")).toBe(true);
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
   });
 
   it("produces a concat list with one entry per segment in order", async () => {
@@ -218,15 +301,12 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
 
-    const segmentsList = readFileSync(
-      join(outputDir, "segments.txt"),
-      "utf8",
-    );
+    const segmentsList = readFileSync(join(outputDir, "segments.txt"), "utf8");
     const lines = segmentsList.split("\n");
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatch(/segment-0\.mp4/);
@@ -248,7 +328,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir: trickyDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -279,7 +359,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir: trickyDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -323,7 +403,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -357,7 +437,7 @@ describe("renderTimeline", () => {
         timeline,
         frames,
         outputDir,
-        tts,
+        speech,
         exec,
       }),
     ).rejects.toThrow(/no frames available/);
@@ -371,7 +451,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
     });
 
@@ -383,7 +463,7 @@ describe("renderTimeline", () => {
 
     for (const s of result.segments) {
       expect(s.segmentVideoPath).toBeUndefined();
-      expect(s.ttsAudioPath).toBeUndefined();
+      expect(s.audioPath).toBeUndefined();
     }
   });
 
@@ -395,7 +475,7 @@ describe("renderTimeline", () => {
       timeline,
       frames,
       outputDir,
-      tts,
+      speech,
       exec,
       keepIntermediates: true,
     });
@@ -403,7 +483,7 @@ describe("renderTimeline", () => {
     expect(existsSync(join(outputDir, "segment-0.mp4"))).toBe(true);
     expect(existsSync(join(outputDir, "audio-0.mp3"))).toBe(true);
     expect(result.segments[0].segmentVideoPath).toBeDefined();
-    expect(result.segments[0].ttsAudioPath).toBeDefined();
+    expect(result.segments[0].audioPath).toBeDefined();
   });
 
   it("throws if the duration probe stderr has no Duration line", async () => {
@@ -415,7 +495,7 @@ describe("renderTimeline", () => {
     };
 
     await expect(
-      renderTimeline({ timeline, frames, outputDir, tts, exec }),
+      renderTimeline({ timeline, frames, outputDir, speech, exec }),
     ).rejects.toThrow(/could not parse audio duration/);
   });
 
@@ -425,7 +505,7 @@ describe("renderTimeline", () => {
         timeline: [],
         frames: [],
         outputDir,
-        tts,
+        speech,
       }),
     ).rejects.toThrow(/timeline is empty/);
   });
@@ -444,7 +524,170 @@ describe("renderTimeline", () => {
     };
 
     await expect(
-      renderTimeline({ timeline, frames, outputDir, tts, exec }),
+      renderTimeline({ timeline, frames, outputDir, speech, exec }),
     ).rejects.toThrow(/ffmpeg exited with status 1/);
+  });
+});
+
+describe("renderTimeline segment length = max(video, audio)", () => {
+  const PROBE_15S =
+    "ffmpeg version blah\n  Duration: 00:00:15.00, start: 0.000000, bitrate: 32 kb/s\n";
+
+  function execWithAudio(stderr: string): ExecRunner {
+    return (_bin, args) => {
+      if (args.length === 2 && args[0] === "-i") {
+        return { stdout: "", stderr, status: 1 };
+      }
+      const out = args[args.length - 1];
+      writeFileSync(out, "fake");
+      return { stdout: "", stderr: "", status: 0 };
+    };
+  }
+
+  const speech: SpeechOptions = {
+    model: new MockSpeechModelV4({
+      doGenerate: async () => ({
+        audio: new Uint8Array([1]),
+        warnings: [],
+        response: { timestamp: new Date(), modelId: "mock" },
+      }),
+    }),
+  };
+
+  async function durationsFor(
+    frames: CapturedFrame[],
+    entry: TimelineEntry,
+    probe: string,
+  ): Promise<number[]> {
+    const outputDir = mkdtempSync(join(tmpdir(), "demo-render-len-"));
+    try {
+      await renderTimeline({
+        timeline: [entry],
+        frames,
+        outputDir,
+        speech,
+        exec: execWithAudio(probe),
+        keepIntermediates: true,
+        ffmpegPath: "/fake/ffmpeg",
+      });
+      const list = readFileSync(
+        join(outputDir, "segment-0-frames", "frames.txt"),
+        "utf8",
+      );
+      return [...list.matchAll(/duration ([\d.]+)/g)].map((m) => Number(m[1]));
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  }
+
+  const f = (t: number): CapturedFrame => ({
+    timestamp: t,
+    data: Buffer.from(`f${t}`).toString("base64"),
+  });
+  const entry = (start: number, end: number): TimelineEntry => ({
+    instruction: "x",
+    narrative: "y",
+    startTime: start,
+    endTime: end,
+    frameCount: 0,
+    segmentDuration: (end - start) / 1000,
+  });
+
+  it("does not clamp the last frame's hold — a 15s narration over one frame is held 15.25s", async () => {
+    const d = await durationsFor([f(1000)], entry(1000, 1100), PROBE_15S);
+    expect(d).toEqual([15.25]);
+  });
+
+  it("derives the last hold from clamped video time so 30 fps capture is not slowed", async () => {
+    // 91 frames 33ms apart = 3.0s of real time; gaps stay 0.033 (above the
+    // 20ms floor), and the last hold tops the total up to audio + tail.
+    const frames = Array.from({ length: 91 }, (_, i) => f(1000 + i * 33));
+    const d = await durationsFor(frames, entry(1000, 4100), PROBE_STDERR); // 2.5s audio
+    const gaps = d.slice(0, -1);
+    expect(gaps.every((g) => Math.abs(g - 0.033) < 1e-9)).toBe(true);
+    const total = d.reduce((a, b) => a + b, 0);
+    // Video already exceeds the 2.5s narration, so the last frame gets only the tail.
+    expect(d.at(-1)).toBeCloseTo(0.25, 3);
+    expect(total).toBeCloseTo(90 * 0.033 + 0.25, 3);
+  });
+
+  it("accounts for a clamped long gap when sizing the last hold", async () => {
+    // A 30s repaint-free gap is clamped to 10s; the last hold must be computed
+    // from the 10s actually laid down, not the 30s raw offset (which would go
+    // negative and truncate a 15s narration).
+    const d = await durationsFor(
+      [f(1000), f(31000)],
+      entry(1000, 31100),
+      PROBE_15S,
+    );
+    expect(d[0]).toBe(10);
+    expect(d[1]).toBeCloseTo(15 - 10 + 0.25, 3);
+  });
+});
+
+describe("renderTimeline frame encodings", () => {
+  it("writes jpeg frames with a .jpg extension and png frames with .png", async () => {
+    const outputDir = mkdtempSync(join(tmpdir(), "demo-render-fmt-"));
+    const seen: string[][] = [];
+    const exec: ExecRunner = (_bin, args) => {
+      seen.push([...args]);
+      // Probe (`-i audio`, no output): return a duration line.
+      if (args.length === 2 && args[0] === "-i") {
+        return { stdout: "", stderr: PROBE_STDERR, status: 1 };
+      }
+      const out = args[args.length - 1];
+      writeFileSync(out, "fake");
+      return { stdout: "", stderr: "", status: 0 };
+    };
+    const speech: SpeechOptions = {
+      model: new MockSpeechModelV4({
+        doGenerate: async () => ({
+          audio: new Uint8Array([1, 2, 3]),
+          warnings: [],
+          response: { timestamp: new Date(), modelId: "mock" },
+        }),
+      }),
+    };
+    const entry: TimelineEntry = {
+      instruction: "x",
+      narrative: "y",
+      startTime: 1000,
+      endTime: 1100,
+      frameCount: 2,
+      segmentDuration: 0.1,
+    };
+    const frames: CapturedFrame[] = [
+      {
+        timestamp: 1010,
+        data: Buffer.from("j").toString("base64"),
+        format: "jpeg",
+      },
+      { timestamp: 1050, data: Buffer.from("p").toString("base64") },
+    ];
+    try {
+      await renderTimeline({
+        timeline: [entry],
+        frames,
+        outputDir,
+        speech,
+        exec,
+        keepIntermediates: true,
+        ffmpegPath: "/fake/ffmpeg",
+      });
+      const list = readFileSync(
+        join(outputDir, "segment-0-frames", "frames.txt"),
+        "utf8",
+      );
+      expect(list).toMatch(/frame-000\.jpg/);
+      expect(list).toMatch(/frame-001\.png/);
+      expect(
+        existsSync(join(outputDir, "segment-0-frames", "frame-000.jpg")),
+      ).toBe(true);
+      expect(
+        existsSync(join(outputDir, "segment-0-frames", "frame-001.png")),
+      ).toBe(true);
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
   });
 });
