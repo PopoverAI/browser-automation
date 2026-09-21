@@ -128,7 +128,7 @@ export async function importProviderModule(
     return await importer(specifier);
   } catch (err) {
     throw new Error(
-      `--tts ${provider}: could not load ${specifier}. Install it in this project (npm i ${specifier}) or run via npx -p ${specifier} -p @popoverai/browser-automation browser-demo …\n${err instanceof Error ? err.message : String(err)}`,
+      `--tts ${provider}: could not load ${specifier}. Install it in this project (npm i ${specifier}) or run via npx -p ${specifier} -p @popoverai/browser-automation agentic-demo …\n${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }

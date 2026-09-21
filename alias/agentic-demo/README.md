@@ -1,7 +1,7 @@
 # agentic-demo
 
-The short name for [`@popoverai/browser-automation`](https://www.npmjs.com/package/@popoverai/browser-automation)'s
-`browser-demo` CLI: narrated demo videos from
+The npm name for [`@popoverai/browser-automation`](https://www.npmjs.com/package/@popoverai/browser-automation)'s
+`agentic-demo` CLI: narrated demo videos from
 [agent-browser](https://www.npmjs.com/package/agent-browser) flows.
 
 ```bash

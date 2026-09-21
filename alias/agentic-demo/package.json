@@ -1,7 +1,7 @@
 {
   "name": "agentic-demo",
   "version": "0.15.0",
-  "description": "Narrated demo videos from agent-browser flows. The short name for @popoverai/browser-automation's browser-demo CLI.",
+  "description": "Narrated demo videos from agent-browser flows. The npm name for @popoverai/browser-automation's agentic-demo CLI.",
   "keywords": [
     "demo",
     "video",

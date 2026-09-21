@@ -1,21 +1,22 @@
 #!/usr/bin/env node
 /**
- * browser-demo — record a narrated demo video by driving agent-browser.
+ * agentic-demo — record a narrated demo video by driving agent-browser.
  *
- *   browser-demo guide             the agent-facing guide (SKILL.md)
- *   browser-demo schema            JSON Schema for the steps file
- *   browser-demo example           a starter steps file
- *   browser-demo validate FILE     check a steps file without recording
- *   browser-demo record FILE       record; `browser-demo FILE` is the same
+ *   agentic-demo guide             the agent-facing guide (SKILL.md)
+ *   agentic-demo schema            JSON Schema for the steps file
+ *   agentic-demo example           a starter steps file
+ *   agentic-demo validate FILE     check a steps file without recording
+ *   agentic-demo record FILE       record; `agentic-demo FILE` is the same
  *
- * Also published as `agentic-demo` (alias/agentic-demo), which imports this
- * file; help and errors print whichever name was used.
+ * The bin of @popoverai/browser-automation, and of the alias package
+ * alias/agentic-demo — both spell it `agentic-demo`, so every message here
+ * names a command the caller has.
  *
  * The steps file is defined in ./stepsFile.ts; the guide lives in SKILL.md
  * at the package root so it ships with, and matches, this binary.
  */
 import { readFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { program } from "commander";
@@ -34,25 +35,6 @@ import {
   stepsFileJsonSchema,
 } from "./stepsFile.js";
 
-/**
- * The name this binary was invoked under: `browser-demo`, or `agentic-demo`
- * from the alias package. Help that tells an agent to run a command it does
- * not have is worse than no help, so the examples print under the name that
- * works here. `node dist/cli.js` keeps the canonical name.
- */
-const invokedAs = ((): string => {
-  // An alias package knows its own name and says so; argv[1] does not carry
-  // it, because Node reports the script path (bin.js), not the shim the user
-  // typed.
-  const declared = process.env.BROWSER_DEMO_INVOKED_AS?.trim();
-  if (declared) return declared;
-  const base = basename((process.argv[1] ?? "").replace(/\.(c|m)?js$/, ""));
-  // `cli` and `bin` are file names, not names anyone can type.
-  return base === "" || base === "cli" || base === "bin"
-    ? "browser-demo"
-    : base;
-})();
-
 interface CliOptions {
   out?: string;
   tts?: string;
@@ -68,7 +50,7 @@ interface CliOptions {
 }
 
 function log(msg: string): void {
-  process.stderr.write(`[${invokedAs}] ${msg}\n`);
+  process.stderr.write(`[agentic-demo] ${msg}\n`);
 }
 
 /** A non-negative integer flag, or a clear error — never a silent NaN no-op. */
@@ -212,24 +194,24 @@ function fail(err: unknown): void {
 }
 
 program
-  .name(invokedAs)
+  .name("agentic-demo")
   .description("Record a narrated demo video by driving agent-browser")
   .addHelpText(
     "before",
     `Start here (for AI agents):
-  ${invokedAs} guide           Workflow, steps-file format, commands that work, how to read failures
-  ${invokedAs} schema          JSON Schema for the steps file
-  ${invokedAs} example         A starter steps file to edit
-  ${invokedAs} validate FILE   Check a steps file without touching a browser
+  agentic-demo guide           Workflow, steps-file format, commands that work, how to read failures
+  agentic-demo schema          JSON Schema for the steps file
+  agentic-demo example         A starter steps file to edit
+  agentic-demo validate FILE   Check a steps file without touching a browser
 
 Typical run:
   agent-browser open https://app.example.com && agent-browser snapshot -i   # explore
-  ${invokedAs} validate steps.json
-  ${invokedAs} record steps.json --silent --out ./demo                       # dry run, no key
-  OPENAI_API_KEY=... ${invokedAs} record steps.json --out ./demo             # narrated
+  agentic-demo validate steps.json
+  agentic-demo record steps.json --silent --out ./demo                       # dry run, no key
+  OPENAI_API_KEY=... agentic-demo record steps.json --out ./demo             # narrated
 `,
   )
-  .showHelpAfterError(`(run \`${invokedAs} guide\` for the full workflow)`);
+  .showHelpAfterError("(run `agentic-demo guide` for the full workflow)");
 
 recordOptions(
   program
@@ -237,7 +219,7 @@ recordOptions(
     .description("record steps.json to an mp4 (default command)")
     .argument(
       "<steps.json>",
-      `steps file — \`${invokedAs} schema\` / \`${invokedAs} example\` describe it`,
+      "steps file — `agentic-demo schema` / `agentic-demo example` describe it",
     ),
 ).action(async (file: string, opts: CliOptions) => {
   try {
@@ -290,7 +272,7 @@ process.stdout.on("error", (err: NodeJS.ErrnoException) => {
   throw err;
 });
 
-// A bare `browser-demo` should orient, not complain about a missing argument.
+// A bare `agentic-demo` should orient, not complain about a missing argument.
 if (process.argv.length <= 2) {
   program.outputHelp();
 } else {

@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import { z } from "zod/v4";
 
 /**
- * The steps file: what `browser-demo` records. Defined once here so the
- * validator, the published JSON Schema (`browser-demo schema`), and the
- * starter example (`browser-demo example`) cannot drift apart.
+ * The steps file: what `agentic-demo` records. Defined once here so the
+ * validator, the published JSON Schema (`agentic-demo schema`), and the
+ * starter example (`agentic-demo example`) cannot drift apart.
  *
  * Objects are strict: a misspelled optional key (`trailingDelayMs`,
  * `voise`) is a validation error, not a silently ignored default — the
@@ -85,7 +85,7 @@ export const StepsFileSchema = z
       .string()
       .optional()
       .describe(
-        "Optional JSON Schema reference; ignored. `browser-demo schema` prints the schema.",
+        "Optional JSON Schema reference; ignored. `agentic-demo schema` prints the schema.",
       ),
     url: z
       .string()
@@ -107,7 +107,7 @@ export const StepsFileSchema = z
     message:
       "openArgs are passed to `open`, which only runs when `url` is set — add a url or drop openArgs",
   })
-  .describe("browser-demo steps file");
+  .describe("agentic-demo steps file");
 
 export type StepsFile = z.infer<typeof StepsFileSchema>;
 export type Step = z.infer<typeof StepSchema>;
@@ -138,7 +138,7 @@ export function parseStepsFileText(raw: string, path = "<steps>"): StepsFile {
       .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
       .join("; ");
     throw new StepsFileError(
-      `${path}: ${issues}\nRun \`browser-demo schema\` for the JSON Schema or \`browser-demo example\` for a starter file.`,
+      `${path}: ${issues}\nRun \`agentic-demo schema\` for the JSON Schema or \`agentic-demo example\` for a starter file.`,
       path,
     );
   }

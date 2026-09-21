@@ -1,4 +1,4 @@
-# browser-demo
+# agentic-demo
 
 Narrated demo videos from [agent-browser](https://www.npmjs.com/package/agent-browser) flows.
 
@@ -34,22 +34,22 @@ OPENAI_API_KEY=... npx agentic-demo steps.json --out ./demo
 #   → ./demo/final.mp4
 ```
 
-(`agentic-demo` is a short alias package for this one; it carries no code of its own. `npx @popoverai/browser-automation …` is the same CLI by its full name — npx runs the package's only bin, `browser-demo`, even though the names differ. `pnpm add -D @popoverai/browser-automation` gives you a bare `browser-demo`.)
+(`agentic-demo` on npm is a name and nothing else — it hands off to the CLI in `@popoverai/browser-automation`. `npx @popoverai/browser-automation …` runs the same bin under the full package name, and `pnpm add -D @popoverai/browser-automation` puts `agentic-demo` on your PATH. One command, three ways in.)
 
 `--silent` renders the same video with a silent audio track sized to the narration, so you can iterate on the steps without any key.
 
 ## For agents
 
-The binary documents itself, so an agent can be told "use browser-demo" and work the rest out:
+The binary documents itself, so an agent can be told "use agentic-demo" and work the rest out:
 
 ```
-browser-demo guide           # the full workflow guide (SKILL.md), version-matched to the binary
-browser-demo schema          # JSON Schema for the steps file
-browser-demo example         # a starter steps file
-browser-demo validate FILE   # check a file without opening a browser
+agentic-demo guide           # the full workflow guide (SKILL.md), version-matched to the binary
+agentic-demo schema          # JSON Schema for the steps file
+agentic-demo example         # a starter steps file
+agentic-demo validate FILE   # check a file without opening a browser
 ```
 
-`browser-demo --help` opens with those, and a failed step prints hints (wrong selector syntax, re-snapshot here, later steps didn't run). [SKILL.md](SKILL.md) is the same guide for agents reading the repo.
+`agentic-demo --help` opens with those, and a failed step prints hints (wrong selector syntax, re-snapshot here, later steps didn't run). [SKILL.md](SKILL.md) is the same guide for agents reading the repo.
 
 ## Steps file
 
@@ -87,7 +87,7 @@ browser-demo validate FILE   # check a file without opening a browser
 ## CLI
 
 ```
-browser-demo <steps.json>
+agentic-demo <steps.json>
   -o, --out <dir>            output directory (default: a unique temp dir)
   --tts <provider[:model]>   narration provider (default: openai:gpt-4o-mini-tts)
   --voice <voice>            voice id for the narration provider
@@ -120,7 +120,7 @@ Where the configuration lives:
 - **Credentials** stay in the environment, using each provider package's convention. The CLI checks for the key up front and fails before opening the browser if it's missing.
 - **Flags** are one-off overrides: `--tts elevenlabs:eleven_v3 --voice <id>`, or `--silent`. Precedence is flags → steps file → default.
 
-Any other AI SDK provider resolves the same way: `--tts acme:model` imports `@ai-sdk/acme`, preferring the copy installed in the current project, so `npm i @ai-sdk/acme` (or `npx -p @ai-sdk/acme -p @popoverai/browser-automation browser-demo …`) is all it takes.
+Any other AI SDK provider resolves the same way: `--tts acme:model` imports `@ai-sdk/acme`, preferring the copy installed in the current project, so `npm i @ai-sdk/acme` (or `npx -p @ai-sdk/acme -p @popoverai/browser-automation agentic-demo …`) is all it takes.
 
 ## Cloud browsers
 

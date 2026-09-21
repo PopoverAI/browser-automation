@@ -1,6 +1,6 @@
 # Changelog
 
-`@popoverai/browser-automation` — the `browser-demo` CLI and library.
+`@popoverai/browser-automation` — the `agentic-demo` CLI and library.
 
 Versions are cut by hand with `npm version` / `npm publish` (see
 CLAUDE.md → Releases). This package is 0.x: a minor bump is a breaking change.
@@ -9,19 +9,42 @@ CLAUDE.md → Releases). This package is 0.x: a minor bump is a breaking change.
 
 Breaking, so this is a **0.15.0** when it is cut (see CLAUDE.md → Releases).
 
+Changed
+
+- **The bin is `agentic-demo`, not `browser-demo`.** `browser-demo` was a name
+  only an installed user could type: it is not a package on npm, so the `npx`
+  route could never reach it, while `SKILL.md` — the guide an agent reads
+  before its first command — spelled every example that way. There is one name
+  now, and it is the same one everywhere: the bin of
+  `@popoverai/browser-automation`, the `agentic-demo` package on npm, the
+  guide, `--help`, and the error messages.
+
+  Breaking for anyone who installed the package and calls `browser-demo`; the
+  command is `agentic-demo`. The old name is not kept as a second bin, because
+  a package with two bins cannot be run as `npx @popoverai/browser-automation
+…` at all — npx picks a bin unprompted only when there is exactly one
+  (verified: two bins gives `could not determine executable to run`).
+
+- Docs lead with `npx agentic-demo …`, with
+  `npx @popoverai/browser-automation …` beside it as the same CLI under the
+  full package name. The old `npx -p @popoverai/browser-automation
+browser-demo …` form was never needed: npx runs a package's only bin whatever
+  it is called. The `-p` spelling remains where a second package really is
+  being added to the npx sandbox (`npx -p @ai-sdk/acme -p
+@popoverai/browser-automation …`).
+
+- README and SKILL.md say outright that steps are scripted, not prompted — the
+  commands run as written and nothing chooses actions at record time. An agent
+  writes the steps file; it does not drive the browser during a take.
+
 Added
 
 - **`agentic-demo`** (`alias/agentic-demo/`): a separately published package
-  that is nothing but a short name for this CLI, so `npx agentic-demo …` works
-  the way `npx agent-browser …` does. Its bin resolves
-  `@popoverai/browser-automation` and imports the same `dist/cli.js` — one
-  implementation, one guide, no drift. Publish it after the main package; it
-  depends on the version being released.
-- `--help`, errors and the `[browser-demo]` log prefix print the name the
-  caller typed. `BROWSER_DEMO_INVOKED_AS` carries it, because Node reports the
-  alias's `bin.js` path in `argv[1]` rather than the shim; `node dist/cli.js`
-  and anything unrecognised keep the canonical `browser-demo`. Help that names
-  a command the caller does not have is worse than no help.
+  that is nothing but the name, so `npx agentic-demo …` works the way
+  `npx agent-browser …` does. Its bin resolves `@popoverai/browser-automation`
+  and imports the same `dist/cli.js` — one implementation, one guide, no
+  drift. Publish it after the main package; it depends on the version being
+  released.
 
 Removed
 
@@ -31,21 +54,6 @@ Removed
   CLI. `--tts lmnt` now falls through to the generic `@ai-sdk/<name>` loader
   and fails with `could not load @ai-sdk/lmnt` rather than passing a key
   preflight for a service that cannot answer.
-
-Changed
-
-- Docs use `npx @popoverai/browser-automation …` instead of
-  `npx -p @popoverai/browser-automation browser-demo …`. npx runs a package's
-  only bin whatever it is called, so the longer form was never needed; the
-  `-p` spelling remains where a second package really is being added to the
-  npx sandbox (`npx -p @ai-sdk/acme -p @popoverai/browser-automation …`).
-- README and SKILL.md lead with `npx agentic-demo …`, keeping
-  `npx @popoverai/browser-automation …` alongside it as the same CLI under its
-  full name. Both are shown everywhere, so the docs stay correct in the window
-  between publishing the main package and publishing the alias.
-- README and SKILL.md say outright that steps are scripted, not prompted —
-  the commands run as written and nothing chooses actions at record time.
-  An agent writes the steps file; it does not drive the browser during a take.
 
 ## 0.14.0 — 2026-09-08
 

@@ -31,7 +31,7 @@ describe("steps file", () => {
     })();
     expect(err).toBeInstanceOf(StepsFileError);
     expect((err as Error).message).toMatch(/steps\.0\.commands/);
-    expect((err as Error).message).toMatch(/browser-demo schema/);
+    expect((err as Error).message).toMatch(/agentic-demo schema/);
   });
 
   it("rejects invalid JSON with the file path", () => {
