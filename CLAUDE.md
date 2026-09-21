@@ -111,18 +111,32 @@ git push --follow-tags
 ```
 
 The `agentic-demo` alias is published separately, **after** the main package,
-because it depends on the version being released:
+because it depends on the version being released. Substitute the version just
+published for `0.15.0` in both places:
 
 ```bash
 cd alias/agentic-demo
-npm version <same version as the main package>   # keep the two in step
+npm pkg set dependencies.@popoverai/browser-automation="^0.15.0"
+npm version 0.15.0 --allow-same-version --no-git-tag-version
 npm publish
+cd ../.. && git commit -am "agentic-demo 0.15.0"   # the two edits above
 ```
 
-Its dependency range is `^0.15.0`-style, so a minor bump of the main package
-(which for a 0.x package means every breaking change) needs the alias
-re-published against the new range, or `npx agentic-demo` keeps resolving the
-old CLI. Nothing else about the alias changes between releases.
+Both flags are load-bearing, and so is the `npm pkg set` line:
+
+- **The dependency range must be bumped by hand.** `npm version` bumps a
+  package's own version and nothing else, so without that first line the alias
+  stays pinned to the previous range. A 0.x minor is a breaking change, so
+  `^0.15.0` excludes 0.16.0 — publishing the alias without it leaves
+  `npx agentic-demo` resolving the _old_ CLI.
+- **`--allow-same-version`**, because the alias's committed version usually
+  already equals the one being released; plain `npm version 0.15.0` exits with
+  `Version not changed` before anything is published.
+- **`--no-git-tag-version`**, because the main package's `npm version` has
+  already created `v0.15.0` in this repo, and a second tag of that name fails
+  with `fatal: tag 'v0.15.0' already exists`.
+
+Nothing else about the alias changes between releases.
 
 The package is 0.x, so **breaking changes bump the minor** (SemVer item 4;
 `^0.13.x` ranges exclude 0.14.0). 1.0.0 would declare the API stable, which it
