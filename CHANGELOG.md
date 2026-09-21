@@ -5,9 +5,9 @@
 Versions are cut by hand with `npm version` / `npm publish` (see
 CLAUDE.md → Releases). This package is 0.x: a minor bump is a breaking change.
 
-## Unreleased
+## 0.15.0 — 2026-09-21
 
-Breaking, so this is a **0.15.0** when it is cut (see CLAUDE.md → Releases).
+**Breaking.** The CLI's bin is now `agentic-demo`; `browser-demo` is gone.
 
 Changed
 
