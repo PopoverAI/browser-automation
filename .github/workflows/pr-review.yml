@@ -92,7 +92,16 @@ jobs:
           # Piped to jq because gh refuses --slurp together with --jq.
           reviews=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" \
             | jq '(add // []) | map(select(.user.login == "claude[bot]"))')
-          last_state=$(echo "$reviews" | jq -r 'last | .state // "NONE"')
+          # Verdict-bearing reviews only. A COMMENTED review carries no
+          # verdict: the reviewer posts a bodiless one as the carrier for its
+          # inline comments, and it lands just after the APPROVED it
+          # accompanies. Reading the literal last review then saw COMMENTED,
+          # reopened a loop the approval had closed, and spent a paid round on
+          # an approved PR — the fail-open this gate exists to prevent. Seen on
+          # dotrequirements PR #335.
+          verdicts=$(echo "$reviews" \
+            | jq '[.[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED")]')
+          last_state=$(echo "$verdicts" | jq -r 'last | .state // "NONE"')
           count=$(echo "$reviews" | jq 'length')
 
           rereview=false
@@ -109,7 +118,7 @@ jobs:
             # commits no matter the pagination; at that cap a tag beyond the
             # returned list can't be ruled out, so the gate buys the round
             # rather than silently skipping.
-            approved_sha=$(echo "$reviews" | jq -r 'last | .commit_id')
+            approved_sha=$(echo "$verdicts" | jq -r 'last | .commit_id')
             verdict=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls/${PR}/commits" \
               | jq -r --arg sha "$approved_sha" '(add // [])
                   | (map(.sha) | index($sha)) as $i
@@ -190,7 +199,13 @@ jobs:
           reviews=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/pulls/${PR}/reviews" \
             | jq '(add // []) | map(select(.user.login == "claude[bot]"))')
           after=$(echo "$reviews" | jq 'length')
-          last_state=$(echo "$reviews" | jq -r 'last | .state // "NONE"')
+          # Verdict-bearing only, for the reason given in the decide step: a
+          # trailing bodiless COMMENTED review would otherwise mask the
+          # standing approval and fail this assertion over a silence the
+          # agent was entitled to.
+          last_state=$(echo "$reviews" \
+            | jq -r '[.[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED")]
+                     | last | .state // "NONE"')
           # The skill's legitimate silences: the PR closed mid-run, or an
           # approval landed between the gate and the agent's own backstop.
           # Not on a re-review round: there the standing APPROVED is the very
