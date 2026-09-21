@@ -1,7 +1,7 @@
 ---
 name: browser-demo
 description: Record a narrated demo video of a web flow by driving agent-browser. Use when asked for a product walkthrough, feature demo, tutorial video, or "record a video of X happening in the browser". Output is an mp4 with per-step narration.
-allowed-tools: Bash(browser-demo:*), Bash(npx -p @popoverai/browser-automation browser-demo:*), Bash(agent-browser:*), Bash(npx agent-browser:*)
+allowed-tools: Bash(browser-demo:*), Bash(npx @popoverai/browser-automation:*), Bash(agent-browser:*), Bash(npx agent-browser:*)
 ---
 
 # browser-demo
@@ -12,8 +12,13 @@ browser's viewport is captured while it runs, narration is synthesised per
 step, and segments are concatenated with the last frame of each held until
 its narration ends.
 
+Steps are scripted, not prompted: the commands run exactly as written and the
+narration is the sentence you supply, so nothing decides what to do mid-take.
+Working out the right commands (step 1 below) _is_ the job.
+
 Installed as `@popoverai/browser-automation`; the bin is `browser-demo`. Without
-an install: `npx -p @popoverai/browser-automation browser-demo …`.
+an install: `npx @popoverai/browser-automation …` — npx runs the package's only
+bin, so the arguments below follow it unchanged.
 
 ```bash
 browser-demo guide            # this document

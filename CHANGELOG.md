@@ -18,6 +18,17 @@ Removed
   and fails with `could not load @ai-sdk/lmnt` rather than passing a key
   preflight for a service that cannot answer.
 
+Changed
+
+- Docs use `npx @popoverai/browser-automation …` instead of
+  `npx -p @popoverai/browser-automation browser-demo …`. npx runs a package's
+  only bin whatever it is called, so the longer form was never needed; the
+  `-p` spelling remains where a second package really is being added to the
+  npx sandbox (`npx -p @ai-sdk/acme -p @popoverai/browser-automation …`).
+- README and SKILL.md say outright that steps are scripted, not prompted —
+  the commands run as written and nothing chooses actions at record time.
+  An agent writes the steps file; it does not drive the browser during a take.
+
 ## 0.14.0 — 2026-09-08
 
 **Breaking.** The package is now `browser-demo`: narrated demo videos from
