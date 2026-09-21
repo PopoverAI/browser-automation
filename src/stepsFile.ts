@@ -36,7 +36,7 @@ const SpeechSchema = SpeechOverridesSchema.extend({
     .min(1)
     .optional()
     .describe(
-      "AI SDK speech provider: openai (default), elevenlabs, lmnt, hume, deepgram, or any @ai-sdk/<name> that is installed.",
+      "AI SDK speech provider: openai (default), elevenlabs, hume, deepgram, or any @ai-sdk/<name> that is installed.",
     ),
   model: z
     .string()

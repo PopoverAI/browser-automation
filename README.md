@@ -103,13 +103,12 @@ Without `--json`, the path to `final.mp4` is printed on stdout and progress goes
 
 ## Narration
 
-Narration goes through the [AI SDK](https://ai-sdk.dev)'s `generateSpeech`, so any AI SDK speech provider works. Five ship with the CLI: **openai** (default), **elevenlabs**, **lmnt**, **hume**, **deepgram**. Each reads its key from its own env var.
+Narration goes through the [AI SDK](https://ai-sdk.dev)'s `generateSpeech`, so any AI SDK speech provider works. Four ship with the CLI: **openai** (default), **elevenlabs**, **hume**, **deepgram**. Each reads its key from its own env var.
 
 | provider   | `--tts`                                                     | key                  | model examples                   |
 | ---------- | ----------------------------------------------------------- | -------------------- | -------------------------------- |
 | OpenAI     | `openai[:model]` (default `gpt-4o-mini-tts`, voice `alloy`) | `OPENAI_API_KEY`     | `gpt-4o-mini-tts`, `tts-1-hd`    |
 | ElevenLabs | `elevenlabs[:model]` (default `eleven_multilingual_v2`)     | `ELEVENLABS_API_KEY` | `eleven_v3`, `eleven_flash_v2_5` |
-| LMNT       | `lmnt[:model]` (default `aurora`)                           | `LMNT_API_KEY`       | `aurora`, `blizzard`             |
 | Hume       | `hume`                                                      | `HUME_API_KEY`       | (single model)                   |
 | Deepgram   | `deepgram[:model]` (default `aura-2`)                       | `DEEPGRAM_API_KEY`   | `aura`, `aura-2`                 |
 
@@ -199,7 +198,7 @@ Segment length is `max(video, audio)`: the last frame is held until the narratio
 
 ```
 OPENAI_API_KEY=...        # narration with the default provider (not needed with --silent)
-ELEVENLABS_API_KEY=...    # or LMNT_API_KEY, HUME_API_KEY, DEEPGRAM_API_KEY, per --tts
+ELEVENLABS_API_KEY=...    # or HUME_API_KEY, DEEPGRAM_API_KEY, per --tts
 FFMPEG_BIN=...            # override the ffmpeg binary
 # plus whatever agent-browser needs for your provider:
 # BROWSERBASE_API_KEY, KERNEL_API_KEY, BROWSERLESS_API_KEY, AWS_* (agentcore), …

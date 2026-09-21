@@ -88,8 +88,8 @@ describe("resolveSpeech", () => {
       providerOptions: { elevenlabs: { stability: 0.4 } },
     });
     await expect(
-      resolveSpeech({ provider: "lmnt" }, {}, { loadModel, env: {} }),
-    ).rejects.toThrow(/LMNT_API_KEY/);
+      resolveSpeech({ provider: "deepgram" }, {}, { loadModel, env: {} }),
+    ).rejects.toThrow(/DEEPGRAM_API_KEY/);
     expect(loadModel).toHaveBeenCalledTimes(1);
   });
 });

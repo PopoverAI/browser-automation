@@ -5,6 +5,19 @@
 Versions are cut by hand with `npm version` / `npm publish` (see
 CLAUDE.md → Releases). This package is 0.x: a minor bump is a breaking change.
 
+## Unreleased
+
+Breaking, so this is a **0.15.0** when it is cut (see CLAUDE.md → Releases).
+
+Removed
+
+- The **LMNT** narration provider and its `@ai-sdk/lmnt` dependency. LMNT has
+  shut down; the package is deprecated upstream and no longer works, and npm
+  printed that deprecation notice on every install and every `npx` run of the
+  CLI. `--tts lmnt` now falls through to the generic `@ai-sdk/<name>` loader
+  and fails with `could not load @ai-sdk/lmnt` rather than passing a key
+  preflight for a service that cannot answer.
+
 ## 0.14.0 — 2026-09-08
 
 **Breaking.** The package is now `browser-demo`: narrated demo videos from

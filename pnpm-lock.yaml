@@ -17,9 +17,6 @@ importers:
       '@ai-sdk/hume':
         specifier: ^3.0.36
         version: 3.0.36(zod@3.25.76)
-      '@ai-sdk/lmnt':
-        specifier: ^3.0.36
-        version: 3.0.36(zod@3.25.76)
       '@ai-sdk/openai':
         specifier: ^4.0.60
         version: 4.0.60(zod@3.25.76)
@@ -98,12 +95,6 @@ packages:
 
   '@ai-sdk/hume@3.0.36':
     resolution: {integrity: sha512-AWU9pWB1oFdnpNjih+ymO3AbYAOO9zLIJSk5sxS4TUWrEGIlRY5ValT6RU2TD9kUmYa67VNMrFGt/kRHFac0nA==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/lmnt@3.0.36':
-    resolution: {integrity: sha512-t4DPPzvuoUZu4lPGIhn13W6gAoz01551BKlkdYgNLcd+XcEL3h0bjZ+jxm1Ic/NGaJvkjegXO4YCllfMgyNVPg==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -753,6 +744,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -1485,12 +1477,6 @@ snapshots:
       zod: 3.25.76
 
   '@ai-sdk/hume@3.0.36(zod@3.25.76)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.10
-      '@ai-sdk/provider-utils': 5.0.36(zod@3.25.76)
-      zod: 3.25.76
-
-  '@ai-sdk/lmnt@3.0.36(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 4.0.10
       '@ai-sdk/provider-utils': 5.0.36(zod@3.25.76)

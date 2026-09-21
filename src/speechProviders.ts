@@ -39,11 +39,6 @@ export const KNOWN_PROVIDERS: Record<string, KnownProvider> = {
     defaultModel: "eleven_multilingual_v2",
     examples: ["eleven_v3", "eleven_multilingual_v2", "eleven_flash_v2_5"],
   },
-  lmnt: {
-    apiKeyEnv: "LMNT_API_KEY",
-    defaultModel: "aurora",
-    examples: ["aurora", "blizzard"],
-  },
   hume: {
     apiKeyEnv: "HUME_API_KEY",
     defaultModel: null,

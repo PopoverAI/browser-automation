@@ -122,9 +122,9 @@ context is being captured.
 ## Narration
 
 The narration provider comes from the AI SDK. Bundled: `openai` (default,
-`gpt-4o-mini-tts`, voice `alloy`), `elevenlabs`, `lmnt`, `hume`, `deepgram`.
-Keys are read from `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `LMNT_API_KEY`,
-`HUME_API_KEY`, `DEEPGRAM_API_KEY`. The CLI checks the key before opening the
+`gpt-4o-mini-tts`, voice `alloy`), `elevenlabs`, `hume`, `deepgram`.
+Keys are read from `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `HUME_API_KEY`,
+`DEEPGRAM_API_KEY`. The CLI checks the key before opening the
 browser and tells you which variable is missing.
 
 - Put `provider`, `model`, `voice`, `instructions` in the steps file's

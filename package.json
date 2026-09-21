@@ -50,7 +50,6 @@
     "@ai-sdk/deepgram": "^3.1.7",
     "@ai-sdk/elevenlabs": "^3.0.37",
     "@ai-sdk/hume": "^3.0.36",
-    "@ai-sdk/lmnt": "^3.0.36",
     "@ai-sdk/openai": "^4.0.60",
     "ai": "^7.0.93",
     "commander": "^14.0.0",
