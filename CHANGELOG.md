@@ -39,6 +39,10 @@ Changed
   only bin whatever it is called, so the longer form was never needed; the
   `-p` spelling remains where a second package really is being added to the
   npx sandbox (`npx -p @ai-sdk/acme -p @popoverai/browser-automation …`).
+- README and SKILL.md lead with `npx agentic-demo …`, keeping
+  `npx @popoverai/browser-automation …` alongside it as the same CLI under its
+  full name. Both are shown everywhere, so the docs stay correct in the window
+  between publishing the main package and publishing the alias.
 - README and SKILL.md say outright that steps are scripted, not prompted —
   the commands run as written and nothing chooses actions at record time.
   An agent writes the steps file; it does not drive the browser during a take.

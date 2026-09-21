@@ -30,11 +30,11 @@ cat > steps.json <<'JSON'
 JSON
 
 # 3. Record
-OPENAI_API_KEY=... npx @popoverai/browser-automation steps.json --out ./demo
+OPENAI_API_KEY=... npx agentic-demo steps.json --out ./demo
 #   → ./demo/final.mp4
 ```
 
-(`npx @popoverai/browser-automation` runs the package's only bin, `browser-demo`, even though the names differ — no `-p` needed. `pnpm add -D @popoverai/browser-automation` gives you a bare `browser-demo`.)
+(`agentic-demo` is a short alias package for this one; it carries no code of its own. `npx @popoverai/browser-automation …` is the same CLI by its full name — npx runs the package's only bin, `browser-demo`, even though the names differ. `pnpm add -D @popoverai/browser-automation` gives you a bare `browser-demo`.)
 
 `--silent` renders the same video with a silent audio track sized to the narration, so you can iterate on the steps without any key.
 
@@ -129,12 +129,12 @@ The recorder talks only to the local agent-browser daemon, so where the browser 
 ```bash
 # Built-in providers (see `agent-browser --help` for their env vars)
 BROWSERBASE_API_KEY=... npx agent-browser --session demo -p browserbase open https://app.example.com
-npx @popoverai/browser-automation steps.json --session demo
+npx agentic-demo steps.json --session demo
 
 # Or provision the session yourself and hand agent-browser the CDP URL —
 # keeps provider-specific features (contexts, proxies, replay) in the provider's own SDK
 npx agent-browser --session demo --cdp "wss://connect.browserbase.com?..." open https://app.example.com
-npx @popoverai/browser-automation steps.json --session demo
+npx agentic-demo steps.json --session demo
 ```
 
 A remote browser adds one round-trip of latency to each frame; segment boundaries skew late by that much, which `trailingDelay` covers.
