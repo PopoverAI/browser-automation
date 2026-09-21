@@ -39,11 +39,6 @@ export const KNOWN_PROVIDERS: Record<string, KnownProvider> = {
     defaultModel: "eleven_multilingual_v2",
     examples: ["eleven_v3", "eleven_multilingual_v2", "eleven_flash_v2_5"],
   },
-  lmnt: {
-    apiKeyEnv: "LMNT_API_KEY",
-    defaultModel: "aurora",
-    examples: ["aurora", "blizzard"],
-  },
   hume: {
     apiKeyEnv: "HUME_API_KEY",
     defaultModel: null,
@@ -54,6 +49,21 @@ export const KNOWN_PROVIDERS: Record<string, KnownProvider> = {
     defaultModel: "aura-2",
     examples: ["aura", "aura-2"],
   },
+};
+
+/**
+ * Providers we used to bundle that are gone for good.
+ *
+ * The distinction that matters: these packages are deprecated, not
+ * unpublished. `npm i @ai-sdk/lmnt` still succeeds, and the module still
+ * exports a speech factory that builds a model object — so the generic
+ * "could not load @ai-sdk/<name>, install it" message would send someone to
+ * install a package that then fails on the first `generateSpeech`, i.e.
+ * after the capture is already done. Failing here keeps the failure where
+ * every other speech failure is: before anything opens a browser.
+ */
+const RETIRED_PROVIDERS: Record<string, string> = {
+  lmnt: "LMNT has shut down. @ai-sdk/lmnt still installs, but it cannot synthesise anything.",
 };
 
 export const DEFAULT_SPEECH_SPEC: SpeechSpec = {
@@ -118,6 +128,12 @@ export async function importProviderModule(
   provider: string,
   opts: { cwd?: string; importer?: ModuleImporter } = {},
 ): Promise<Record<string, unknown>> {
+  const retired = RETIRED_PROVIDERS[provider];
+  if (retired) {
+    throw new Error(
+      `--tts ${provider}: ${retired} Use one of ${Object.keys(KNOWN_PROVIDERS).join(", ")}, or pass --silent.`,
+    );
+  }
   const specifier = `@ai-sdk/${provider}`;
   const importer = opts.importer ?? ((s) => import(s));
   const cwd = opts.cwd ?? process.cwd();
@@ -133,7 +149,7 @@ export async function importProviderModule(
     return await importer(specifier);
   } catch (err) {
     throw new Error(
-      `--tts ${provider}: could not load ${specifier}. Install it in this project (npm i ${specifier}) or run via npx -p ${specifier} -p @popoverai/browser-automation browser-demo …\n${err instanceof Error ? err.message : String(err)}`,
+      `--tts ${provider}: could not load ${specifier}. Install it in this project (npm i ${specifier}) or run via npx -p ${specifier} -p @popoverai/browser-automation agentic-demo …\n${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }

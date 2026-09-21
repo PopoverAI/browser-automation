@@ -1,8 +1,10 @@
-# browser-demo
+# agentic-demo
 
 Narrated demo videos from [agent-browser](https://www.npmjs.com/package/agent-browser) flows.
 
 You write a list of steps — agent-browser commands plus the sentence to say over them — and get back an mp4: each step runs as one `agent-browser batch`, the daemon's viewport stream is captured while it runs, narration is synthesised per step, and the segments are stitched together with the last frame of each held until its narration ends.
+
+**The steps are a script, not a prompt.** Every command is an agent-browser argv array that runs exactly as written, and the narration is the sentence you wrote — nothing chooses actions while the tape is rolling, so recording the same file twice gives you the same video. An agent is typically what _writes_ the steps file (see [For agents](#for-agents)); it isn't what drives the browser during the take.
 
 agent-browser owns the browser. Point it at local Chrome, a running Chrome over `--cdp`, or a cloud provider (`-p browserbase|kernel|browserless|agentcore`), and record the same way.
 
@@ -28,26 +30,26 @@ cat > steps.json <<'JSON'
 JSON
 
 # 3. Record
-OPENAI_API_KEY=... npx -p @popoverai/browser-automation browser-demo steps.json --out ./demo
+OPENAI_API_KEY=... npx agentic-demo steps.json --out ./demo
 #   → ./demo/final.mp4
 ```
 
-(`npx -p @popoverai/browser-automation browser-demo` because the package is scoped and the bin is not; `pnpm add -D @popoverai/browser-automation` gives you a bare `browser-demo`.)
+(`agentic-demo` on npm is a name and nothing else — it hands off to the CLI in `@popoverai/browser-automation`. `npx @popoverai/browser-automation …` runs the same bin under the full package name, and `pnpm add -D @popoverai/browser-automation` puts `agentic-demo` on your PATH. One command, three ways in.)
 
 `--silent` renders the same video with a silent audio track sized to the narration, so you can iterate on the steps without any key.
 
 ## For agents
 
-The binary documents itself, so an agent can be told "use browser-demo" and work the rest out:
+The binary documents itself, so an agent can be told "use agentic-demo" and work the rest out:
 
 ```
-browser-demo guide           # the full workflow guide (SKILL.md), version-matched to the binary
-browser-demo schema          # JSON Schema for the steps file
-browser-demo example         # a starter steps file
-browser-demo validate FILE   # check a file without opening a browser
+agentic-demo guide           # the full workflow guide (SKILL.md), version-matched to the binary
+agentic-demo schema          # JSON Schema for the steps file
+agentic-demo example         # a starter steps file
+agentic-demo validate FILE   # check a file without opening a browser
 ```
 
-`browser-demo --help` opens with those, and a failed step prints hints (wrong selector syntax, re-snapshot here, later steps didn't run). [SKILL.md](SKILL.md) is the same guide for agents reading the repo.
+`agentic-demo --help` opens with those, and a failed step prints hints (wrong selector syntax, re-snapshot here, later steps didn't run). [SKILL.md](SKILL.md) is the same guide for agents reading the repo.
 
 ## Steps file
 
@@ -85,7 +87,7 @@ browser-demo validate FILE   # check a file without opening a browser
 ## CLI
 
 ```
-browser-demo <steps.json>
+agentic-demo <steps.json>
   -o, --out <dir>            output directory (default: a unique temp dir)
   --tts <provider[:model]>   narration provider (default: openai:gpt-4o-mini-tts)
   --voice <voice>            voice id for the narration provider
@@ -103,13 +105,12 @@ Without `--json`, the path to `final.mp4` is printed on stdout and progress goes
 
 ## Narration
 
-Narration goes through the [AI SDK](https://ai-sdk.dev)'s `generateSpeech`, so any AI SDK speech provider works. Five ship with the CLI: **openai** (default), **elevenlabs**, **lmnt**, **hume**, **deepgram**. Each reads its key from its own env var.
+Narration goes through the [AI SDK](https://ai-sdk.dev)'s `generateSpeech`, so any AI SDK speech provider works. Four ship with the CLI: **openai** (default), **elevenlabs**, **hume**, **deepgram**. Each reads its key from its own env var.
 
 | provider   | `--tts`                                                     | key                  | model examples                   |
 | ---------- | ----------------------------------------------------------- | -------------------- | -------------------------------- |
 | OpenAI     | `openai[:model]` (default `gpt-4o-mini-tts`, voice `alloy`) | `OPENAI_API_KEY`     | `gpt-4o-mini-tts`, `tts-1-hd`    |
 | ElevenLabs | `elevenlabs[:model]` (default `eleven_multilingual_v2`)     | `ELEVENLABS_API_KEY` | `eleven_v3`, `eleven_flash_v2_5` |
-| LMNT       | `lmnt[:model]` (default `aurora`)                           | `LMNT_API_KEY`       | `aurora`, `blizzard`             |
 | Hume       | `hume`                                                      | `HUME_API_KEY`       | (single model)                   |
 | Deepgram   | `deepgram[:model]` (default `aura-2`)                       | `DEEPGRAM_API_KEY`   | `aura`, `aura-2`                 |
 
@@ -119,7 +120,7 @@ Where the configuration lives:
 - **Credentials** stay in the environment, using each provider package's convention. The CLI checks for the key up front and fails before opening the browser if it's missing.
 - **Flags** are one-off overrides: `--tts elevenlabs:eleven_v3 --voice <id>`, or `--silent`. Precedence is flags → steps file → default.
 
-Any other AI SDK provider resolves the same way: `--tts acme:model` imports `@ai-sdk/acme`, preferring the copy installed in the current project, so `npm i @ai-sdk/acme` (or `npx -p @ai-sdk/acme -p @popoverai/browser-automation browser-demo …`) is all it takes.
+Any other AI SDK provider resolves the same way: `--tts acme:model` imports `@ai-sdk/acme`, preferring the copy installed in the current project, so `npm i @ai-sdk/acme` (or `npx -p @ai-sdk/acme -p @popoverai/browser-automation agentic-demo …`) is all it takes.
 
 ## Cloud browsers
 
@@ -128,12 +129,12 @@ The recorder talks only to the local agent-browser daemon, so where the browser 
 ```bash
 # Built-in providers (see `agent-browser --help` for their env vars)
 BROWSERBASE_API_KEY=... npx agent-browser --session demo -p browserbase open https://app.example.com
-npx -p @popoverai/browser-automation browser-demo steps.json --session demo
+npx agentic-demo steps.json --session demo
 
 # Or provision the session yourself and hand agent-browser the CDP URL —
 # keeps provider-specific features (contexts, proxies, replay) in the provider's own SDK
 npx agent-browser --session demo --cdp "wss://connect.browserbase.com?..." open https://app.example.com
-npx -p @popoverai/browser-automation browser-demo steps.json --session demo
+npx agentic-demo steps.json --session demo
 ```
 
 A remote browser adds one round-trip of latency to each frame; segment boundaries skew late by that much, which `trailingDelay` covers.
@@ -199,7 +200,7 @@ Segment length is `max(video, audio)`: the last frame is held until the narratio
 
 ```
 OPENAI_API_KEY=...        # narration with the default provider (not needed with --silent)
-ELEVENLABS_API_KEY=...    # or LMNT_API_KEY, HUME_API_KEY, DEEPGRAM_API_KEY, per --tts
+ELEVENLABS_API_KEY=...    # or HUME_API_KEY, DEEPGRAM_API_KEY, per --tts
 FFMPEG_BIN=...            # override the ffmpeg binary
 # plus whatever agent-browser needs for your provider:
 # BROWSERBASE_API_KEY, KERNEL_API_KEY, BROWSERLESS_API_KEY, AWS_* (agentcore), …

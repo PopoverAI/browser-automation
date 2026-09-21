@@ -1,10 +1,10 @@
 ---
-name: browser-demo
+name: agentic-demo
 description: Record a narrated demo video of a web flow by driving agent-browser. Use when asked for a product walkthrough, feature demo, tutorial video, or "record a video of X happening in the browser". Output is an mp4 with per-step narration.
-allowed-tools: Bash(browser-demo:*), Bash(npx -p @popoverai/browser-automation browser-demo:*), Bash(agent-browser:*), Bash(npx agent-browser:*)
+allowed-tools: Bash(agentic-demo:*), Bash(npx agentic-demo:*), Bash(npx @popoverai/browser-automation:*), Bash(agent-browser:*), Bash(npx agent-browser:*)
 ---
 
-# browser-demo
+# agentic-demo
 
 Turns a list of steps — agent-browser commands plus a sentence to say over
 each — into an mp4. Each step runs as one `agent-browser batch --bail`, the
@@ -12,15 +12,20 @@ browser's viewport is captured while it runs, narration is synthesised per
 step, and segments are concatenated with the last frame of each held until
 its narration ends.
 
-Installed as `@popoverai/browser-automation`; the bin is `browser-demo`. Without
-an install: `npx -p @popoverai/browser-automation browser-demo …`.
+Steps are scripted, not prompted: the commands run exactly as written and the
+narration is the sentence you supply, so nothing decides what to do mid-take.
+Working out the right commands (step 1 below) _is_ the job.
+
+The bin is `agentic-demo`, from either `@popoverai/browser-automation` or the
+`agentic-demo` package. Without an install: `npx agentic-demo …`. Every command
+below is spelled exactly as you can type it.
 
 ```bash
-browser-demo guide            # this document
-browser-demo schema           # JSON Schema for the steps file
-browser-demo example          # a starter steps file
-browser-demo validate FILE    # check a steps file without recording
-browser-demo record FILE      # record (also: browser-demo FILE)
+agentic-demo guide            # this document
+agentic-demo schema           # JSON Schema for the steps file
+agentic-demo example          # a starter steps file
+agentic-demo validate FILE    # check a steps file without recording
+agentic-demo record FILE      # record (also: agentic-demo FILE)
 ```
 
 ## Workflow
@@ -40,13 +45,13 @@ browser-demo record FILE      # record (also: browser-demo FILE)
    happens on screen is worse than no narration.
 3. **Validate**, then **dry-run silently** — no API key, same timing:
    ```bash
-   browser-demo validate steps.json
-   browser-demo record steps.json --silent --out ./demo
+   agentic-demo validate steps.json
+   agentic-demo record steps.json --silent --out ./demo
    ```
    Scrub `./demo/final.mp4` (or extract frames with ffmpeg) and fix steps.
 4. **Record with narration** once the flow is right:
    ```bash
-   OPENAI_API_KEY=… browser-demo record steps.json --out ./demo
+   OPENAI_API_KEY=… agentic-demo record steps.json --out ./demo
    ```
 5. Report the path printed on stdout. `--json` gives a per-step summary:
    `captureSeconds` (how long the commands took), `narrationSeconds` (the
@@ -96,7 +101,7 @@ browser-demo record FILE      # record (also: browser-demo FILE)
   so the final repaint lands in the segment. Raise it for slow transitions.
 - A per-step `speech` block overrides `voice`, `instructions`, `speed`,
   `language` for that step only.
-- Full schema: `browser-demo schema`.
+- Full schema: `agentic-demo schema`.
 
 ## Commands that work well in steps
 
@@ -122,9 +127,9 @@ context is being captured.
 ## Narration
 
 The narration provider comes from the AI SDK. Bundled: `openai` (default,
-`gpt-4o-mini-tts`, voice `alloy`), `elevenlabs`, `lmnt`, `hume`, `deepgram`.
-Keys are read from `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `LMNT_API_KEY`,
-`HUME_API_KEY`, `DEEPGRAM_API_KEY`. The CLI checks the key before opening the
+`gpt-4o-mini-tts`, voice `alloy`), `elevenlabs`, `hume`, `deepgram`.
+Keys are read from `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `HUME_API_KEY`,
+`DEEPGRAM_API_KEY`. The CLI checks the key before opening the
 browser and tells you which variable is missing.
 
 - Put `provider`, `model`, `voice`, `instructions` in the steps file's
@@ -142,7 +147,7 @@ the same `--session`:
 
 ```bash
 BROWSERBASE_API_KEY=… agent-browser --session demo -p browserbase open https://app.example.com
-browser-demo record steps.json --session demo
+agentic-demo record steps.json --session demo
 ```
 
 Or hand agent-browser a CDP URL you provisioned yourself:

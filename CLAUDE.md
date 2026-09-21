@@ -5,7 +5,7 @@ code in this repository.
 
 ## Project Overview
 
-`@popoverai/browser-automation` ships the `browser-demo` CLI and library:
+`@popoverai/browser-automation` ships the `agentic-demo` CLI and library:
 narrated demo videos from [agent-browser](https://www.npmjs.com/package/agent-browser)
 flows. A steps file (agent-browser commands plus a narration sentence per step)
 goes in; an mp4 comes out. agent-browser owns the browser (local Chrome,
@@ -16,7 +16,9 @@ Stagehand MCP server until agent-browser proved the better agentic interface;
 that surface was removed (see README "History"). There is no MCP server, no
 Stagehand, no Browserbase session management, no Docker image.
 
-Single package, no workspace. TypeScript, ESM, Node 22+ (`ai@7` sets the
+Single package, no workspace — `alias/agentic-demo/` is the one exception,
+and it is a name, not a package: one file, no build, no tests, published
+separately (see Releases). TypeScript, ESM, Node 22+ (`ai@7` sets the
 floor; agent-browser itself prefers 24 but runs on 22).
 
 ## What's worth doing
@@ -36,7 +38,7 @@ an observation rather than a problem.
 
 ## Layout
 
-- `src/cli.ts` — the `browser-demo` binary: `record` (default), `validate`,
+- `src/cli.ts` — the `agentic-demo` binary: `record` (default), `validate`,
   `guide`, `schema`, `example`
 - `src/stepsFile.ts` — the steps-file schema (zod/v4), its JSON Schema, and
   the starter example; the single source of truth for the input format
@@ -49,10 +51,15 @@ an observation rather than a problem.
 - `src/speech.ts` — narration through the AI SDK's `generateSpeech`, or a
   pure-JS silent WAV when no `speech` is configured
 - `src/speechProviders.ts` — CLI-side `--tts <provider[:model]>` resolution;
-  openai, elevenlabs, lmnt, hume, deepgram are bundled
+  openai, elevenlabs, hume, deepgram are bundled
 - `src/timeline.ts` — `CapturedFrame` / `TimelineEntry` shared types
-- `SKILL.md` — the agent-facing guide, printed by `browser-demo guide`;
+- `SKILL.md` — the agent-facing guide, printed by `agentic-demo guide`;
   shipped in the package so it always matches the binary
+- `alias/agentic-demo/` — the `agentic-demo` npm package: a bin that resolves
+  `@popoverai/browser-automation` and imports its `dist/cli.js`, so
+  `npx agentic-demo …` works without a second implementation. The main
+  package's bin is spelled `agentic-demo` too, so there is one name to type
+  however the CLI got there.
 - `tests/` — vitest, one file per subject; ffmpeg and agent-browser are
   stubbed (an exec seam and a fake stream WebSocket server), speech models
   are `MockSpeechModelV4` from `ai/test`
@@ -89,7 +96,7 @@ binary.
   new tab (page state is lost between steps), needs ffmpeg on PATH, and
   captures at 10 fps. The stream is the right surface.
 - Anything an agent needs to use the CLI belongs in `SKILL.md` or the zod
-  descriptions in `stepsFile.ts`, not only in the README — `browser-demo
+  descriptions in `stepsFile.ts`, not only in the README — `agentic-demo
 guide` / `schema` are how a CLI-only agent learns the tool.
 
 ## Releases
@@ -102,6 +109,34 @@ npm version <patch|minor>   # bumps package.json, commits "x.y.z", tags vx.y.z
 npm publish                 # prepublishOnly rebuilds; ships README.md, SKILL.md, dist
 git push --follow-tags
 ```
+
+The `agentic-demo` alias is published separately, **after** the main package,
+because it depends on the version being released. Substitute the version just
+published for `0.15.0` in both places:
+
+```bash
+cd alias/agentic-demo
+npm pkg set dependencies.@popoverai/browser-automation="^0.15.0"
+npm version 0.15.0 --allow-same-version --no-git-tag-version
+npm publish
+cd ../.. && git commit -am "agentic-demo 0.15.0"   # the two edits above
+```
+
+Both flags are load-bearing, and so is the `npm pkg set` line:
+
+- **The dependency range must be bumped by hand.** `npm version` bumps a
+  package's own version and nothing else, so without that first line the alias
+  stays pinned to the previous range. A 0.x minor is a breaking change, so
+  `^0.15.0` excludes 0.16.0 — publishing the alias without it leaves
+  `npx agentic-demo` resolving the _old_ CLI.
+- **`--allow-same-version`**, because the alias's committed version usually
+  already equals the one being released; plain `npm version 0.15.0` exits with
+  `Version not changed` before anything is published.
+- **`--no-git-tag-version`**, because the main package's `npm version` has
+  already created `v0.15.0` in this repo, and a second tag of that name fails
+  with `fatal: tag 'v0.15.0' already exists`.
+
+Nothing else about the alias changes between releases.
 
 The package is 0.x, so **breaking changes bump the minor** (SemVer item 4;
 `^0.13.x` ranges exclude 0.14.0). 1.0.0 would declare the API stable, which it

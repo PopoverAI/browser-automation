@@ -1,9 +1,66 @@
 # Changelog
 
-`@popoverai/browser-automation` — the `browser-demo` CLI and library.
+`@popoverai/browser-automation` — the `agentic-demo` CLI and library.
 
 Versions are cut by hand with `npm version` / `npm publish` (see
 CLAUDE.md → Releases). This package is 0.x: a minor bump is a breaking change.
+
+## Unreleased
+
+Breaking, so this is a **0.15.0** when it is cut (see CLAUDE.md → Releases).
+
+Changed
+
+- **The bin is `agentic-demo`, not `browser-demo`.** `browser-demo` was a name
+  only an installed user could type: it is not a package on npm, so the `npx`
+  route could never reach it, while `SKILL.md` — the guide an agent reads
+  before its first command — spelled every example that way. There is one name
+  now, and it is the same one everywhere: the bin of
+  `@popoverai/browser-automation`, the `agentic-demo` package on npm, the
+  guide, `--help`, and the error messages.
+
+  Breaking for anyone who installed the package and calls `browser-demo`; the
+  command is `agentic-demo`. The old name is not kept as a second bin, because
+  a package with two bins cannot be run as `npx @popoverai/browser-automation
+…` at all — npx picks a bin unprompted only when there is exactly one
+  (verified: two bins gives `could not determine executable to run`).
+
+- Docs lead with `npx agentic-demo …`, with
+  `npx @popoverai/browser-automation …` beside it as the same CLI under the
+  full package name. The old `npx -p @popoverai/browser-automation
+browser-demo …` form was never needed: npx runs a package's only bin whatever
+  it is called. The `-p` spelling remains where a second package really is
+  being added to the npx sandbox (`npx -p @ai-sdk/acme -p
+@popoverai/browser-automation …`).
+
+- README and SKILL.md say outright that steps are scripted, not prompted — the
+  commands run as written and nothing chooses actions at record time. An agent
+  writes the steps file; it does not drive the browser during a take.
+
+Added
+
+- **`agentic-demo`** (`alias/agentic-demo/`): a separately published package
+  that is nothing but the name, so `npx agentic-demo …` works the way
+  `npx agent-browser …` does. Its bin resolves `@popoverai/browser-automation`
+  and imports the same `dist/cli.js` — one implementation, one guide, no
+  drift. Publish it after the main package; it depends on the version being
+  released.
+
+Removed
+
+- The **LMNT** narration provider and its `@ai-sdk/lmnt` dependency. LMNT has
+  shut down; the package is deprecated upstream and no longer works, and npm
+  printed that deprecation notice on every install and every `npx` run of the
+  CLI. `--tts lmnt` (or `"provider": "lmnt"` in a steps file) now fails up
+  front with `LMNT has shut down…  Use one of openai, elevenlabs, hume,
+deepgram, or pass --silent.`
+
+  It gets its own message rather than falling through to the generic
+  `could not load @ai-sdk/<name>, install it` path, because that path's
+  advice would make things worse: the package is deprecated, not
+  unpublished, so `npm i @ai-sdk/lmnt` succeeds and still exports a speech
+  factory. The startup check would then pass and the failure would move to
+  the first `generateSpeech` call — after the capture is already recorded.
 
 ## 0.14.0 — 2026-09-08
 
