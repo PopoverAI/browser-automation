@@ -8,11 +8,14 @@
  *   browser-demo validate FILE     check a steps file without recording
  *   browser-demo record FILE       record; `browser-demo FILE` is the same
  *
+ * Also published as `agentic-demo` (alias/agentic-demo), which imports this
+ * file; help and errors print whichever name was used.
+ *
  * The steps file is defined in ./stepsFile.ts; the guide lives in SKILL.md
  * at the package root so it ships with, and matches, this binary.
  */
 import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { program } from "commander";
@@ -31,6 +34,25 @@ import {
   stepsFileJsonSchema,
 } from "./stepsFile.js";
 
+/**
+ * The name this binary was invoked under: `browser-demo`, or `agentic-demo`
+ * from the alias package. Help that tells an agent to run a command it does
+ * not have is worse than no help, so the examples print under the name that
+ * works here. `node dist/cli.js` keeps the canonical name.
+ */
+const invokedAs = ((): string => {
+  // An alias package knows its own name and says so; argv[1] does not carry
+  // it, because Node reports the script path (bin.js), not the shim the user
+  // typed.
+  const declared = process.env.BROWSER_DEMO_INVOKED_AS?.trim();
+  if (declared) return declared;
+  const base = basename((process.argv[1] ?? "").replace(/\.(c|m)?js$/, ""));
+  // `cli` and `bin` are file names, not names anyone can type.
+  return base === "" || base === "cli" || base === "bin"
+    ? "browser-demo"
+    : base;
+})();
+
 interface CliOptions {
   out?: string;
   tts?: string;
@@ -46,7 +68,7 @@ interface CliOptions {
 }
 
 function log(msg: string): void {
-  process.stderr.write(`[browser-demo] ${msg}\n`);
+  process.stderr.write(`[${invokedAs}] ${msg}\n`);
 }
 
 /** A non-negative integer flag, or a clear error — never a silent NaN no-op. */
@@ -190,24 +212,24 @@ function fail(err: unknown): void {
 }
 
 program
-  .name("browser-demo")
+  .name(invokedAs)
   .description("Record a narrated demo video by driving agent-browser")
   .addHelpText(
     "before",
     `Start here (for AI agents):
-  browser-demo guide           Workflow, steps-file format, commands that work, how to read failures
-  browser-demo schema          JSON Schema for the steps file
-  browser-demo example         A starter steps file to edit
-  browser-demo validate FILE   Check a steps file without touching a browser
+  ${invokedAs} guide           Workflow, steps-file format, commands that work, how to read failures
+  ${invokedAs} schema          JSON Schema for the steps file
+  ${invokedAs} example         A starter steps file to edit
+  ${invokedAs} validate FILE   Check a steps file without touching a browser
 
 Typical run:
   agent-browser open https://app.example.com && agent-browser snapshot -i   # explore
-  browser-demo validate steps.json
-  browser-demo record steps.json --silent --out ./demo                       # dry run, no key
-  OPENAI_API_KEY=... browser-demo record steps.json --out ./demo             # narrated
+  ${invokedAs} validate steps.json
+  ${invokedAs} record steps.json --silent --out ./demo                       # dry run, no key
+  OPENAI_API_KEY=... ${invokedAs} record steps.json --out ./demo             # narrated
 `,
   )
-  .showHelpAfterError("(run `browser-demo guide` for the full workflow)");
+  .showHelpAfterError(`(run \`${invokedAs} guide\` for the full workflow)`);
 
 recordOptions(
   program
@@ -215,7 +237,7 @@ recordOptions(
     .description("record steps.json to an mp4 (default command)")
     .argument(
       "<steps.json>",
-      "steps file — `browser-demo schema` / `browser-demo example` describe it",
+      `steps file — \`${invokedAs} schema\` / \`${invokedAs} example\` describe it`,
     ),
 ).action(async (file: string, opts: CliOptions) => {
   try {

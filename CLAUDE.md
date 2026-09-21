@@ -16,7 +16,9 @@ Stagehand MCP server until agent-browser proved the better agentic interface;
 that surface was removed (see README "History"). There is no MCP server, no
 Stagehand, no Browserbase session management, no Docker image.
 
-Single package, no workspace. TypeScript, ESM, Node 22+ (`ai@7` sets the
+Single package, no workspace — `alias/agentic-demo/` is the one exception,
+and it is a name, not a package: one file, no build, no tests, published
+separately (see Releases). TypeScript, ESM, Node 22+ (`ai@7` sets the
 floor; agent-browser itself prefers 24 but runs on 22).
 
 ## What's worth doing
@@ -53,6 +55,11 @@ an observation rather than a problem.
 - `src/timeline.ts` — `CapturedFrame` / `TimelineEntry` shared types
 - `SKILL.md` — the agent-facing guide, printed by `browser-demo guide`;
   shipped in the package so it always matches the binary
+- `alias/agentic-demo/` — the `agentic-demo` package: a bin that resolves
+  `@popoverai/browser-automation` and imports its `dist/cli.js`, so `npx
+agentic-demo …` works without a second implementation. It sets
+  `BROWSER_DEMO_INVOKED_AS`, which is how `--help` and errors print the name
+  the caller actually typed (Node puts `bin.js` in `argv[1]`, not the shim).
 - `tests/` — vitest, one file per subject; ffmpeg and agent-browser are
   stubbed (an exec seam and a fake stream WebSocket server), speech models
   are `MockSpeechModelV4` from `ai/test`
@@ -102,6 +109,20 @@ npm version <patch|minor>   # bumps package.json, commits "x.y.z", tags vx.y.z
 npm publish                 # prepublishOnly rebuilds; ships README.md, SKILL.md, dist
 git push --follow-tags
 ```
+
+The `agentic-demo` alias is published separately, **after** the main package,
+because it depends on the version being released:
+
+```bash
+cd alias/agentic-demo
+npm version <same version as the main package>   # keep the two in step
+npm publish
+```
+
+Its dependency range is `^0.15.0`-style, so a minor bump of the main package
+(which for a 0.x package means every breaking change) needs the alias
+re-published against the new range, or `npx agentic-demo` keeps resolving the
+old CLI. Nothing else about the alias changes between releases.
 
 The package is 0.x, so **breaking changes bump the minor** (SemVer item 4;
 `^0.13.x` ranges exclude 0.14.0). 1.0.0 would declare the API stable, which it

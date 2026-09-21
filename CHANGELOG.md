@@ -9,6 +9,20 @@ CLAUDE.md → Releases). This package is 0.x: a minor bump is a breaking change.
 
 Breaking, so this is a **0.15.0** when it is cut (see CLAUDE.md → Releases).
 
+Added
+
+- **`agentic-demo`** (`alias/agentic-demo/`): a separately published package
+  that is nothing but a short name for this CLI, so `npx agentic-demo …` works
+  the way `npx agent-browser …` does. Its bin resolves
+  `@popoverai/browser-automation` and imports the same `dist/cli.js` — one
+  implementation, one guide, no drift. Publish it after the main package; it
+  depends on the version being released.
+- `--help`, errors and the `[browser-demo]` log prefix print the name the
+  caller typed. `BROWSER_DEMO_INVOKED_AS` carries it, because Node reports the
+  alias's `bin.js` path in `argv[1]` rather than the shim; `node dist/cli.js`
+  and anything unrecognised keep the canonical `browser-demo`. Help that names
+  a command the caller does not have is worse than no help.
+
 Removed
 
 - The **LMNT** narration provider and its `@ai-sdk/lmnt` dependency. LMNT has
