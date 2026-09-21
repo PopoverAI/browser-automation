@@ -30,6 +30,18 @@ describe("parseSpeechSpec", () => {
   });
 });
 
+describe("retired providers", () => {
+  it("says the service is gone instead of naming an install that defers the failure", async () => {
+    const importer = vi.fn();
+    await expect(
+      importProviderModule("lmnt", { importer: importer as ModuleImporter }),
+    ).rejects.toThrow(/LMNT has shut down/);
+    // Never reaches the import, so it can never suggest `npm i @ai-sdk/lmnt`:
+    // that install succeeds and moves the failure past the capture.
+    expect(importer).not.toHaveBeenCalled();
+  });
+});
+
 describe("assertSpeechCredentials", () => {
   it("names the missing env var for bundled providers", () => {
     expect(() =>

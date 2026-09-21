@@ -51,9 +51,16 @@ Removed
 - The **LMNT** narration provider and its `@ai-sdk/lmnt` dependency. LMNT has
   shut down; the package is deprecated upstream and no longer works, and npm
   printed that deprecation notice on every install and every `npx` run of the
-  CLI. `--tts lmnt` now falls through to the generic `@ai-sdk/<name>` loader
-  and fails with `could not load @ai-sdk/lmnt` rather than passing a key
-  preflight for a service that cannot answer.
+  CLI. `--tts lmnt` (or `"provider": "lmnt"` in a steps file) now fails up
+  front with `LMNT has shut down…  Use one of openai, elevenlabs, hume,
+deepgram, or pass --silent.`
+
+  It gets its own message rather than falling through to the generic
+  `could not load @ai-sdk/<name>, install it` path, because that path's
+  advice would make things worse: the package is deprecated, not
+  unpublished, so `npm i @ai-sdk/lmnt` succeeds and still exports a speech
+  factory. The startup check would then pass and the failure would move to
+  the first `generateSpeech` call — after the capture is already recorded.
 
 ## 0.14.0 — 2026-09-08
 
