@@ -77,16 +77,25 @@ pnpm check            # biome check --write  (format + lint + organize imports)
 ```
 
 **Linting and formatting are Biome**, one tool in place of ESLint, Prettier,
-husky and lint-staged. The config is stock `biome init` output: recommended
-rules, tab indentation, and `vcs.useIgnoreFile`, which is why a gitignored
-build directory in a nested worktree no longer fails lint the way it did under
-ESLint. Biome does not parse Markdown or YAML at all, so `.md` and the
-workflow `.yml` files are formatted by hand — that is a gap in the tool, not
-an oversight. There is no pre-commit hook; run `pnpm check` yourself.
+husky and lint-staged. The config is `biome init` output — recommended rules,
+tab indentation, `vcs.useIgnoreFile` — with one deliberate departure, below.
+`useIgnoreFile` is why a gitignored build directory in a nested worktree no
+longer fails lint the way it did under ESLint. Biome does not parse Markdown
+or YAML at all, so `.md` and the workflow `.yml` files are formatted by hand —
+that is a gap in the tool, not an oversight. There is no pre-commit hook; run
+`pnpm check` yourself.
 
-Warnings are not errors: `biome ci` exits 0 on them, and a few
-`noNonNullAssertion` warnings in `tests/` are left standing deliberately,
-because `!` on a value a test just constructed is the clearer spelling.
+**Three rules are raised to `error` in `biome.json`.** `biome ci` fails on
+errors and exits 0 on warnings, and Biome's recommended preset rates
+`noUnusedVariables`, `noUnusedImports` and `noExplicitAny` as warnings — all
+three were errors under the `tseslint.configs.recommended` this replaced, so
+leaving them at the default would have quietly weakened the gate that
+`eslint . --ext .ts` enforced. Don't lower them back without deciding you want
+a dead import or an `any` to merge green.
+
+What is left at warn genuinely does not block: the `noNonNullAssertion`
+warnings in `tests/` stand deliberately, because `!` on a value a test just
+constructed is the clearer spelling.
 
 **Typechecking:** run `pnpm typecheck`, not a bare `tsc --noEmit`. The build's
 `tsconfig.json` is scoped to `src/` (it sets `rootDir` there and emits

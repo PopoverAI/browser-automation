@@ -37,11 +37,9 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        # HUSKY=0 stops the `prepare` script installing git hooks onto a
-        # throwaway runner. `prepare` still runs `pnpm build` after it, so the
-        # package is compiled here as a side effect.
-        env:
-          HUSKY: 0
+        # `prepare` runs `pnpm build`, so the package is compiled here as a
+        # side effect. There are no git hooks to suppress: husky was removed
+        # with the move to Biome.
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
@@ -59,8 +57,14 @@ jobs:
       - name: Lint
         # `biome ci` — check-only, never writes, and the command Biome
         # documents for CI. It covers formatting and lint in one pass, so
-        # there is no separate format check. It exits 0 on warnings, which is
-        # deliberate: the `noNonNullAssertion` warnings in tests/ are the
-        # clearer spelling there. Keep this green — a red-on-arrival gate
-        # trains everyone to ignore red.
+        # there is no separate format check.
+        #
+        # It fails on errors and exits 0 on warnings — repo-wide, not just for
+        # the cases we like. Biome's recommended preset rates several rules
+        # that ESLint failed on as warnings, so biome.json raises
+        # noUnusedVariables, noUnusedImports and noExplicitAny back to error
+        # to keep the gate as strong as it was under tseslint. Anything still
+        # at warn level (the `!` assertions in tests/) genuinely does not
+        # block. Keep this green — a red-on-arrival gate trains everyone to
+        # ignore red.
         run: pnpm lint
