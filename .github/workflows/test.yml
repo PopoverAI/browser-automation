@@ -57,9 +57,10 @@ jobs:
         run: pnpm test
 
       - name: Lint
-        # Added once lint went green: the four pre-existing errors that kept
-        # this job out (untyped Stagehand/Playwright internals in
-        # src/sessionManager.ts and src/tools/navigate.ts) left with the
-        # Stagehand surface. Keep it green — a red-on-arrival gate trains
-        # everyone to ignore red.
+        # `biome ci` — check-only, never writes, and the command Biome
+        # documents for CI. It covers formatting and lint in one pass, so
+        # there is no separate format check. It exits 0 on warnings, which is
+        # deliberate: the `noNonNullAssertion` warnings in tests/ are the
+        # clearer spelling there. Keep this green — a red-on-arrival gate
+        # trains everyone to ignore red.
         run: pnpm lint

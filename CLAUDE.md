@@ -71,9 +71,22 @@ pnpm install          # also builds, via the `prepare` script
 pnpm build            # tsc && chmod +x dist/cli.js
 pnpm test             # vitest run
 pnpm typecheck        # tsc --noEmit over src/ AND tests/ (see below)
-pnpm lint             # eslint . --ext .ts
-pnpm format           # prettier --write .
+pnpm lint             # biome ci  (check only; what CI runs)
+pnpm format           # biome format --write
+pnpm check            # biome check --write  (format + lint + organize imports)
 ```
+
+**Linting and formatting are Biome**, one tool in place of ESLint, Prettier,
+husky and lint-staged. The config is stock `biome init` output: recommended
+rules, tab indentation, and `vcs.useIgnoreFile`, which is why a gitignored
+build directory in a nested worktree no longer fails lint the way it did under
+ESLint. Biome does not parse Markdown or YAML at all, so `.md` and the
+workflow `.yml` files are formatted by hand — that is a gap in the tool, not
+an oversight. There is no pre-commit hook; run `pnpm check` yourself.
+
+Warnings are not errors: `biome ci` exits 0 on them, and a few
+`noNonNullAssertion` warnings in `tests/` are left standing deliberately,
+because `!` on a value a test just constructed is the clearer spelling.
 
 **Typechecking:** run `pnpm typecheck`, not a bare `tsc --noEmit`. The build's
 `tsconfig.json` is scoped to `src/` (it sets `rootDir` there and emits

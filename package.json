@@ -1,78 +1,66 @@
 {
-  "name": "@popoverai/browser-automation",
-  "version": "0.15.0",
-  "description": "Narrated demo videos from agent-browser flows: run steps as agent-browser batches, capture the viewport stream, render an mp4 with per-step TTS.",
-  "license": "Apache-2.0",
-  "author": "Popover AI",
-  "contributors": [
-    "Browserbase, Inc. (https://www.browserbase.com/) - Original implementation"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/PopoverAI/browser-automation"
-  },
-  "type": "module",
-  "module": "./src/index.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "bin": {
-    "agentic-demo": "dist/cli.js"
-  },
-  "files": [
-    "README.md",
-    "SKILL.md",
-    "dist"
-  ],
-  "scripts": {
-    "build": "tsc && shx chmod +x dist/cli.js",
-    "prepare": "husky && pnpm build",
-    "watch": "tsc --watch",
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
-    "lint": "eslint . --ext .ts",
-    "format": "prettier --write .",
-    "clean": "rm -rf dist",
-    "prepublishOnly": "pnpm clean && pnpm build",
-    "pre-commit": "pnpm lint-staged"
-  },
-  "lint-staged": {
-    "*.{js,jsx,ts,tsx,json,css,scss,md}": [
-      "prettier --write .",
-      "eslint --fix"
-    ]
-  },
-  "dependencies": {
-    "@ai-sdk/deepgram": "^3.1.7",
-    "@ai-sdk/elevenlabs": "^3.0.37",
-    "@ai-sdk/hume": "^3.0.36",
-    "@ai-sdk/openai": "^4.0.60",
-    "ai": "^7.0.93",
-    "commander": "^14.0.0",
-    "ffmpeg-static": "^5.3.0",
-    "ws": "^8.18.0",
-    "zod": "^3.25.76"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.29.0",
-    "@types/node": "^24.10.1",
-    "@types/ws": "^8.5.13",
-    "eslint": "^9.29.0",
-    "globals": "^16.2.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.1.2",
-    "prettier": "^3.6.1",
-    "shx": "^0.3.4",
-    "typescript": "^5.6.2",
-    "typescript-eslint": "^8.35.0",
-    "vitest": "^4.1.5"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "packageManager": "pnpm@10.12.4+sha512.5ea8b0deed94ed68691c9bad4c955492705c5eeb8a87ef86bc62c74a26b037b08ff9570f108b2e4dbd1dd1a9186fea925e527f141c648e85af45631074680184"
+	"name": "@popoverai/browser-automation",
+	"version": "0.15.0",
+	"description": "Narrated demo videos from agent-browser flows: run steps as agent-browser batches, capture the viewport stream, render an mp4 with per-step TTS.",
+	"license": "Apache-2.0",
+	"author": "Popover AI",
+	"contributors": [
+		"Browserbase, Inc. (https://www.browserbase.com/) - Original implementation"
+	],
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PopoverAI/browser-automation"
+	},
+	"type": "module",
+	"module": "./src/index.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"bin": {
+		"agentic-demo": "dist/cli.js"
+	},
+	"files": [
+		"README.md",
+		"SKILL.md",
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc && shx chmod +x dist/cli.js",
+		"prepare": "pnpm build",
+		"watch": "tsc --watch",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
+		"lint": "biome ci",
+		"format": "biome format --write",
+		"clean": "rm -rf dist",
+		"prepublishOnly": "pnpm clean && pnpm build",
+		"check": "biome check --write"
+	},
+	"dependencies": {
+		"@ai-sdk/deepgram": "^3.1.7",
+		"@ai-sdk/elevenlabs": "^3.0.37",
+		"@ai-sdk/hume": "^3.0.36",
+		"@ai-sdk/openai": "^4.0.60",
+		"ai": "^7.0.93",
+		"commander": "^14.0.0",
+		"ffmpeg-static": "^5.3.0",
+		"ws": "^8.18.0",
+		"zod": "^3.25.76"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.14",
+		"@types/node": "^24.10.1",
+		"@types/ws": "^8.5.13",
+		"shx": "^0.3.4",
+		"typescript": "^5.6.2",
+		"vitest": "^4.1.5"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"packageManager": "pnpm@10.12.4+sha512.5ea8b0deed94ed68691c9bad4c955492705c5eeb8a87ef86bc62c74a26b037b08ff9570f108b2e4dbd1dd1a9186fea925e527f141c648e85af45631074680184"
 }
