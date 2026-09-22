@@ -11,17 +11,17 @@ import type { SpeechModel } from "ai";
  */
 
 export interface SpeechSpec {
-  provider: string;
-  model?: string;
+	provider: string;
+	model?: string;
 }
 
 interface KnownProvider {
-  /** Env var the provider package reads its API key from. */
-  apiKeyEnv: string;
-  /** Default model when the spec has none; `null` means the factory takes no id. */
-  defaultModel: string | null;
-  /** Example model ids for error messages. */
-  examples: string[];
+	/** Env var the provider package reads its API key from. */
+	apiKeyEnv: string;
+	/** Default model when the spec has none; `null` means the factory takes no id. */
+	defaultModel: string | null;
+	/** Example model ids for error messages. */
+	examples: string[];
 }
 
 /**
@@ -29,26 +29,26 @@ interface KnownProvider {
  * (`@ai-sdk/<name>`), just without a key preflight or default model.
  */
 export const KNOWN_PROVIDERS: Record<string, KnownProvider> = {
-  openai: {
-    apiKeyEnv: "OPENAI_API_KEY",
-    defaultModel: "gpt-4o-mini-tts",
-    examples: ["gpt-4o-mini-tts", "tts-1-hd"],
-  },
-  elevenlabs: {
-    apiKeyEnv: "ELEVENLABS_API_KEY",
-    defaultModel: "eleven_multilingual_v2",
-    examples: ["eleven_v3", "eleven_multilingual_v2", "eleven_flash_v2_5"],
-  },
-  hume: {
-    apiKeyEnv: "HUME_API_KEY",
-    defaultModel: null,
-    examples: [],
-  },
-  deepgram: {
-    apiKeyEnv: "DEEPGRAM_API_KEY",
-    defaultModel: "aura-2",
-    examples: ["aura", "aura-2"],
-  },
+	openai: {
+		apiKeyEnv: "OPENAI_API_KEY",
+		defaultModel: "gpt-4o-mini-tts",
+		examples: ["gpt-4o-mini-tts", "tts-1-hd"],
+	},
+	elevenlabs: {
+		apiKeyEnv: "ELEVENLABS_API_KEY",
+		defaultModel: "eleven_multilingual_v2",
+		examples: ["eleven_v3", "eleven_multilingual_v2", "eleven_flash_v2_5"],
+	},
+	hume: {
+		apiKeyEnv: "HUME_API_KEY",
+		defaultModel: null,
+		examples: [],
+	},
+	deepgram: {
+		apiKeyEnv: "DEEPGRAM_API_KEY",
+		defaultModel: "aura-2",
+		examples: ["aura", "aura-2"],
+	},
 };
 
 /**
@@ -63,12 +63,12 @@ export const KNOWN_PROVIDERS: Record<string, KnownProvider> = {
  * every other speech failure is: before anything opens a browser.
  */
 const RETIRED_PROVIDERS: Record<string, string> = {
-  lmnt: "LMNT has shut down. @ai-sdk/lmnt still installs, but it cannot synthesise anything.",
+	lmnt: "LMNT has shut down. @ai-sdk/lmnt still installs, but it cannot synthesise anything.",
 };
 
 export const DEFAULT_SPEECH_SPEC: SpeechSpec = {
-  provider: "openai",
-  model: "gpt-4o-mini-tts",
+	provider: "openai",
+	model: "gpt-4o-mini-tts",
 };
 
 /** Default voice for the default provider; other providers pick their own. */
@@ -76,19 +76,19 @@ export const DEFAULT_OPENAI_VOICE = "alloy";
 
 /** Parse `provider[:model]`. */
 export function parseSpeechSpec(input: string): SpeechSpec {
-  const trimmed = input.trim();
-  const idx = trimmed.indexOf(":");
-  const provider = (idx === -1 ? trimmed : trimmed.slice(0, idx)).toLowerCase();
-  const model = idx === -1 ? undefined : trimmed.slice(idx + 1);
-  if (!/^[a-z0-9-]+$/.test(provider)) {
-    throw new Error(
-      `--tts: "${input}" is not a valid provider spec (expected <provider>[:<model>], e.g. elevenlabs:eleven_v3)`,
-    );
-  }
-  if (model !== undefined && model.length === 0) {
-    throw new Error(`--tts: "${input}" has an empty model id`);
-  }
-  return { provider, model };
+	const trimmed = input.trim();
+	const idx = trimmed.indexOf(":");
+	const provider = (idx === -1 ? trimmed : trimmed.slice(0, idx)).toLowerCase();
+	const model = idx === -1 ? undefined : trimmed.slice(idx + 1);
+	if (!/^[a-z0-9-]+$/.test(provider)) {
+		throw new Error(
+			`--tts: "${input}" is not a valid provider spec (expected <provider>[:<model>], e.g. elevenlabs:eleven_v3)`,
+		);
+	}
+	if (model !== undefined && model.length === 0) {
+		throw new Error(`--tts: "${input}" has an empty model id`);
+	}
+	return { provider, model };
 }
 
 /**
@@ -97,26 +97,26 @@ export function parseSpeechSpec(input: string): SpeechSpec {
  * work is done.
  */
 export function assertSpeechCredentials(
-  spec: SpeechSpec,
-  env: NodeJS.ProcessEnv = process.env,
+	spec: SpeechSpec,
+	env: NodeJS.ProcessEnv = process.env,
 ): void {
-  const known = KNOWN_PROVIDERS[spec.provider];
-  if (!known) return;
-  if (!env[known.apiKeyEnv]) {
-    throw new Error(
-      `${known.apiKeyEnv} is not set (needed for --tts ${spec.provider}). Set it, choose another provider with --tts or the steps file's "speech" block, or pass --silent.`,
-    );
-  }
+	const known = KNOWN_PROVIDERS[spec.provider];
+	if (!known) return;
+	if (!env[known.apiKeyEnv]) {
+		throw new Error(
+			`${known.apiKeyEnv} is not set (needed for --tts ${spec.provider}). Set it, choose another provider with --tts or the steps file's "speech" block, or pass --silent.`,
+		);
+	}
 }
 
 /** Shape of an AI SDK provider package's default instance, as far as we use it. */
 interface ProviderInstance {
-  speechModel?: (modelId?: string) => SpeechModel;
-  speech?: (modelId?: string) => SpeechModel;
+	speechModel?: (modelId?: string) => SpeechModel;
+	speech?: (modelId?: string) => SpeechModel;
 }
 
 export type ModuleImporter = (
-  specifier: string,
+	specifier: string,
 ) => Promise<Record<string, unknown>>;
 
 /**
@@ -125,33 +125,33 @@ export type ModuleImporter = (
  * falling back to the CLI's own dependencies.
  */
 export async function importProviderModule(
-  provider: string,
-  opts: { cwd?: string; importer?: ModuleImporter } = {},
+	provider: string,
+	opts: { cwd?: string; importer?: ModuleImporter } = {},
 ): Promise<Record<string, unknown>> {
-  const retired = RETIRED_PROVIDERS[provider];
-  if (retired) {
-    throw new Error(
-      `--tts ${provider}: ${retired} Use one of ${Object.keys(KNOWN_PROVIDERS).join(", ")}, or pass --silent.`,
-    );
-  }
-  const specifier = `@ai-sdk/${provider}`;
-  const importer = opts.importer ?? ((s) => import(s));
-  const cwd = opts.cwd ?? process.cwd();
-  try {
-    const resolved = createRequire(join(cwd, "package.json")).resolve(
-      specifier,
-    );
-    return await importer(pathToFileURL(resolved).href);
-  } catch {
-    // Not installed in the project — fall through to our own tree.
-  }
-  try {
-    return await importer(specifier);
-  } catch (err) {
-    throw new Error(
-      `--tts ${provider}: could not load ${specifier}. Install it in this project (npm i ${specifier}) or run via npx -p ${specifier} -p @popoverai/browser-automation agentic-demo …\n${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
+	const retired = RETIRED_PROVIDERS[provider];
+	if (retired) {
+		throw new Error(
+			`--tts ${provider}: ${retired} Use one of ${Object.keys(KNOWN_PROVIDERS).join(", ")}, or pass --silent.`,
+		);
+	}
+	const specifier = `@ai-sdk/${provider}`;
+	const importer = opts.importer ?? ((s) => import(s));
+	const cwd = opts.cwd ?? process.cwd();
+	try {
+		const resolved = createRequire(join(cwd, "package.json")).resolve(
+			specifier,
+		);
+		return await importer(pathToFileURL(resolved).href);
+	} catch {
+		// Not installed in the project — fall through to our own tree.
+	}
+	try {
+		return await importer(specifier);
+	} catch (err) {
+		throw new Error(
+			`--tts ${provider}: could not load ${specifier}. Install it in this project (npm i ${specifier}) or run via npx -p ${specifier} -p @popoverai/browser-automation agentic-demo …\n${err instanceof Error ? err.message : String(err)}`,
+		);
+	}
 }
 
 /**
@@ -160,49 +160,49 @@ export async function importProviderModule(
  * its speech factory.
  */
 export async function loadSpeechModel(
-  spec: SpeechSpec,
-  opts: { cwd?: string; importer?: ModuleImporter } = {},
+	spec: SpeechSpec,
+	opts: { cwd?: string; importer?: ModuleImporter } = {},
 ): Promise<SpeechModel> {
-  const mod = await importProviderModule(spec.provider, opts);
-  const instance = findProviderInstance(mod, spec.provider);
-  if (!instance) {
-    throw new Error(
-      `--tts ${spec.provider}: @ai-sdk/${spec.provider} does not export a speech-capable provider instance`,
-    );
-  }
-  const known = KNOWN_PROVIDERS[spec.provider];
-  const factory = instance.speechModel ?? instance.speech;
-  if (!factory) {
-    throw new Error(`--tts ${spec.provider}: provider has no speech models`);
-  }
-  if (known?.defaultModel === null) {
-    // Single-model provider (Hume): the factory takes no id.
-    return factory.call(instance);
-  }
-  const model = spec.model ?? known?.defaultModel;
-  if (!model) {
-    throw new Error(
-      `--tts ${spec.provider}: a model id is required (--tts ${spec.provider}:<model>)`,
-    );
-  }
-  return factory.call(instance, model);
+	const mod = await importProviderModule(spec.provider, opts);
+	const instance = findProviderInstance(mod, spec.provider);
+	if (!instance) {
+		throw new Error(
+			`--tts ${spec.provider}: @ai-sdk/${spec.provider} does not export a speech-capable provider instance`,
+		);
+	}
+	const known = KNOWN_PROVIDERS[spec.provider];
+	const factory = instance.speechModel ?? instance.speech;
+	if (!factory) {
+		throw new Error(`--tts ${spec.provider}: provider has no speech models`);
+	}
+	if (known?.defaultModel === null) {
+		// Single-model provider (Hume): the factory takes no id.
+		return factory.call(instance);
+	}
+	const model = spec.model ?? known?.defaultModel;
+	if (!model) {
+		throw new Error(
+			`--tts ${spec.provider}: a model id is required (--tts ${spec.provider}:<model>)`,
+		);
+	}
+	return factory.call(instance, model);
 }
 
 function findProviderInstance(
-  mod: Record<string, unknown>,
-  provider: string,
+	mod: Record<string, unknown>,
+	provider: string,
 ): ProviderInstance | undefined {
-  const isInstance = (v: unknown): v is ProviderInstance =>
-    typeof v === "function" || (typeof v === "object" && v !== null)
-      ? typeof (v as ProviderInstance).speech === "function" ||
-        typeof (v as ProviderInstance).speechModel === "function"
-      : false;
-  const named = mod[provider] ?? mod[provider.replace(/-/g, "")];
-  if (isInstance(named)) return named;
-  const fallback = mod.default;
-  if (isInstance(fallback)) return fallback;
-  for (const v of Object.values(mod)) {
-    if (isInstance(v)) return v;
-  }
-  return undefined;
+	const isInstance = (v: unknown): v is ProviderInstance =>
+		typeof v === "function" || (typeof v === "object" && v !== null)
+			? typeof (v as ProviderInstance).speech === "function" ||
+				typeof (v as ProviderInstance).speechModel === "function"
+			: false;
+	const named = mod[provider] ?? mod[provider.replace(/-/g, "")];
+	if (isInstance(named)) return named;
+	const fallback = mod.default;
+	if (isInstance(fallback)) return fallback;
+	for (const v of Object.values(mod)) {
+		if (isInstance(v)) return v;
+	}
+	return undefined;
 }

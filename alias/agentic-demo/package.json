@@ -1,36 +1,36 @@
 {
-  "name": "agentic-demo",
-  "version": "0.15.0",
-  "description": "Narrated demo videos from agent-browser flows. The npm name for @popoverai/browser-automation's agentic-demo CLI.",
-  "keywords": [
-    "demo",
-    "video",
-    "narration",
-    "agent-browser",
-    "screencast"
-  ],
-  "license": "Apache-2.0",
-  "author": "Popover AI",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/PopoverAI/browser-automation",
-    "directory": "alias/agentic-demo"
-  },
-  "type": "module",
-  "bin": {
-    "agentic-demo": "bin.js"
-  },
-  "files": [
-    "bin.js",
-    "README.md"
-  ],
-  "engines": {
-    "node": ">=22"
-  },
-  "dependencies": {
-    "@popoverai/browser-automation": "^0.15.0"
-  },
-  "publishConfig": {
-    "access": "public"
-  }
+	"name": "agentic-demo",
+	"version": "0.15.0",
+	"description": "Narrated demo videos from agent-browser flows. The npm name for @popoverai/browser-automation's agentic-demo CLI.",
+	"keywords": [
+		"demo",
+		"video",
+		"narration",
+		"agent-browser",
+		"screencast"
+	],
+	"license": "Apache-2.0",
+	"author": "Popover AI",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/PopoverAI/browser-automation",
+		"directory": "alias/agentic-demo"
+	},
+	"type": "module",
+	"bin": {
+		"agentic-demo": "bin.js"
+	},
+	"files": [
+		"bin.js",
+		"README.md"
+	],
+	"engines": {
+		"node": ">=22"
+	},
+	"dependencies": {
+		"@popoverai/browser-automation": "^0.15.0"
+	},
+	"publishConfig": {
+		"access": "public"
+	}
 }
