@@ -41,3 +41,6 @@ npm-debug.log*
 *.mp4
 *.mp3
 *.wav
+
+# The agentic-demo alias ships the root README; its prepack script copies it in.
+alias/agentic-demo/README.md

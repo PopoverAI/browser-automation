@@ -13,7 +13,7 @@ goes in; an mp4 comes out. agent-browser owns the browser (local Chrome,
 
 It began as a fork of `@browserbasehq/mcp-server-browserbase` and carried a
 Stagehand MCP server until agent-browser proved the better agentic interface;
-that surface was removed (see README "History"). There is no MCP server, no
+that surface was removed (see CHANGELOG 0.14.0). There is no MCP server, no
 Stagehand, no Browserbase session management, no Docker image.
 
 Single package, no workspace — `alias/agentic-demo/` is the one exception,
@@ -55,11 +55,17 @@ an observation rather than a problem.
 - `src/timeline.ts` — `CapturedFrame` / `TimelineEntry` shared types
 - `SKILL.md` — the agent-facing guide, printed by `agentic-demo guide`;
   shipped in the package so it always matches the binary
+- `README.md` — the npm page of both packages, for a person asking "what is
+  this for and how do I use it". Its structure follows agent-browser's
+  README. Design rationale and history belong here or in `CHANGELOG.md`, not
+  there, and links in it must be absolute: the alias publishes it from
+  another directory.
 - `alias/agentic-demo/` — the `agentic-demo` npm package: a bin that resolves
   `@popoverai/browser-automation` and imports its `dist/cli.js`, so
   `npx agentic-demo …` works without a second implementation. The main
   package's bin is spelled `agentic-demo` too, so there is one name to type
-  however the CLI got there.
+  however the CLI got there. Its `prepack` copies in the root README
+  (gitignored here), so both npm pages are the same page.
 - `tests/` — vitest, one file per subject; ffmpeg and agent-browser are
   stubbed (an exec seam and a fake stream WebSocket server), speech models
   are `MockSpeechModelV4` from `ai/test`

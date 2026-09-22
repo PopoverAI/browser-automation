@@ -24,6 +24,9 @@
 		"bin.js",
 		"README.md"
 	],
+	"scripts": {
+		"prepack": "cp ../../README.md README.md"
+	},
 	"engines": {
 		"node": ">=22"
 	},
