@@ -6,7 +6,7 @@ You write a list of steps — agent-browser commands plus the sentence to say ov
 
 **The steps are a script, not a prompt.** Every command is an agent-browser argv array that runs exactly as written, and the narration is the sentence you wrote — nothing chooses actions while the tape is rolling, so recording the same file twice gives you the same video. An agent is typically what _writes_ the steps file (see [For agents](#for-agents)); it isn't what drives the browser during the take.
 
-agent-browser owns the browser. Point it at local Chrome, a running Chrome over `--cdp`, or a cloud provider (`-p browserbase|kernel|browserless|agentcore`), and record the same way.
+agent-browser owns the browser. Point it at local Chrome, a running Chrome over `--cdp`, or a cloud provider (`-p browserbase|kernel|browserless|browseruse|agentcore`), and record the same way.
 
 ## Quick start
 
@@ -185,12 +185,13 @@ try {
 
 `attachAgentBrowserDemoRecorder` enables `agent-browser stream` — a localhost WebSocket on which the daemon relays CDP `Page.screencastFrame` as JPEG — and stamps each frame on receipt. Step boundaries are stamped from the same clock around each batch, so frames bucket into segments consistently. The stream is change-driven: a static page produces no frames, and the renderer holds the previous frame.
 
-It deliberately does **not** use `agent-browser record`. As of agent-browser 0.36, `record start` opens a fresh browser context in a new tab — cookies and localStorage survive, but the DOM, SPA state, and anything typed do not, so every step would begin with a reload — and `record stop` needs `ffmpeg` on `PATH` and encodes at 10 fps.
+It deliberately does **not** use `agent-browser record`, which writes one continuous video and needs an `ffmpeg` on `PATH`. The stream hands over individual frames stamped on the same clock as the step boundaries, so each step's segment comes straight out of the capture, and the bundled ffmpeg is enough. (Before agent-browser 0.37, `record start` also opened a fresh browser context in a new tab, losing page state between steps, and encoded at 10 fps. It now records the current tab as-is at 30 fps.)
 
 Segment length is `max(video, audio)`: the last frame is held until the narration finishes, and an action that outlasts its narration plays to completion over silence.
 
 ## Requirements and caveats
 
+- **Node ≥ 22** for `agentic-demo` itself (the AI SDK sets the floor).
 - **agent-browser** is resolved with `npx` by default; no global install needed. Its `engines` asks for Node ≥ 24 (it runs on 22 with a warning). Chrome is found automatically or via `agent-browser install` / `open --executable-path`.
 - **ffmpeg.** `ffmpeg-static` downloads a binary at install time; pnpm 10 blocks that until you run `pnpm approve-builds`. Otherwise pass `--ffmpeg <path>` or set `FFMPEG_BIN`. Needs libx264 + aac (any standard build).
 - **Narration** needs a key for whichever provider you pick (see [Narration](#narration)); `--silent` needs none.
@@ -209,6 +210,10 @@ FFMPEG_BIN=...            # override the ffmpeg binary
 ## History
 
 This package began as a fork of [@browserbasehq/mcp-server-browserbase](https://github.com/browserbase/mcp-server-browserbase) (Apache 2.0) and for a while carried a Stagehand MCP server alongside the demo recorder. That surface — the MCP tools, Stagehand scripts and scenarios, Browserbase session management, ngrok tunnelling — was removed once agent-browser covered the driving side better; agent-browser ships its own agent skills (`agent-browser skills get core`), so an MCP wrapper wasn't pulling its weight.
+
+## Changelog
+
+Release notes are in [CHANGELOG.md](https://github.com/PopoverAI/browser-automation/blob/main/CHANGELOG.md). The package is 0.x, so a minor bump is a breaking change.
 
 ## License
 

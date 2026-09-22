@@ -114,9 +114,12 @@ binary.
 
 - The renderer takes an AI SDK `SpeechModel`; it never imports a provider
   package. Provider resolution is a CLI concern (`speechProviders.ts`).
-- Don't use `agent-browser record` for capture: it opens a fresh context in a
-  new tab (page state is lost between steps), needs ffmpeg on PATH, and
-  captures at 10 fps. The stream is the right surface.
+- Capture is `agent-browser stream`, not `agent-browser record`: the stream
+  hands over frames stamped on the step clock, so segments fall out of the
+  capture, and it needs no ffmpeg on PATH (record does). Before agent-browser
+  0.37, `record` also opened a fresh context in a new tab and captured at
+  10 fps. Those reasons are gone, so weigh only the current ones if this is
+  ever revisited.
 - Anything an agent needs to use the CLI belongs in `SKILL.md` or the zod
   descriptions in `stepsFile.ts`, not only in the README — `agentic-demo
 guide` / `schema` are how a CLI-only agent learns the tool.

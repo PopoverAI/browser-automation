@@ -120,9 +120,9 @@ agentic-demo record FILE      # record (also: agentic-demo FILE)
 ```
 
 Do **not** use `text=…` as a selector — agent-browser does not accept that
-syntax; use `find text <value> click`. Do not put `record`, `tab new`,
-`tab close`, `connect`, or `close` in steps: they change which tab or
-context is being captured.
+syntax; use `find text <value> click`. Do not put `tab new`, `tab close`,
+`connect`, or `close` in steps: they change which tab or context is being
+captured. Leave out `record` too: agentic-demo is already capturing.
 
 ## Narration
 
