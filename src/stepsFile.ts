@@ -167,10 +167,11 @@ export function exampleStepsFile(): StepsFile {
 		steps: [
 			{
 				narrate: "Sign in with the demo account.",
+				// Credentials come from agent-browser's encrypted store
+				// (`agent-browser auth save demo …`), so no password is
+				// written into the steps file.
 				commands: [
-					["fill", "#email", "demo@example.com"],
-					["fill", "#password", "hunter2"],
-					["find", "text", "Sign in", "click"],
+					["auth", "login", "demo", "--no-navigate"],
 					["wait", "--load", "networkidle"],
 				],
 			},

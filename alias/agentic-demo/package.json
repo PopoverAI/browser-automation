@@ -1,13 +1,15 @@
 {
 	"name": "agentic-demo",
 	"version": "0.15.0",
-	"description": "Narrated demo videos from agent-browser flows. The npm name for @popoverai/browser-automation's agentic-demo CLI.",
+	"description": "Narrated demo videos of your web app, recorded by your coding agent. Short name for @popoverai/browser-automation.",
 	"keywords": [
 		"demo",
 		"video",
 		"narration",
 		"agent-browser",
-		"screencast"
+		"screencast",
+		"ai-agents",
+		"product-demo"
 	],
 	"license": "Apache-2.0",
 	"author": "Popover AI",
@@ -24,6 +26,9 @@
 		"bin.js",
 		"README.md"
 	],
+	"scripts": {
+		"prepack": "cp ../../README.md README.md"
+	},
 	"engines": {
 		"node": ">=22"
 	},

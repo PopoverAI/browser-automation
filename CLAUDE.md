@@ -13,7 +13,7 @@ goes in; an mp4 comes out. agent-browser owns the browser (local Chrome,
 
 It began as a fork of `@browserbasehq/mcp-server-browserbase` and carried a
 Stagehand MCP server until agent-browser proved the better agentic interface;
-that surface was removed (see README "History"). There is no MCP server, no
+that surface was removed (see CHANGELOG 0.14.0). There is no MCP server, no
 Stagehand, no Browserbase session management, no Docker image.
 
 Single package, no workspace — `alias/agentic-demo/` is the one exception,
@@ -55,11 +55,21 @@ an observation rather than a problem.
 - `src/timeline.ts` — `CapturedFrame` / `TimelineEntry` shared types
 - `SKILL.md` — the agent-facing guide, printed by `agentic-demo guide`;
   shipped in the package so it always matches the binary
+- `README.md` — the npm page of both packages, in two parts. The top is for
+  a person asking "what is this for and how do I use it", who may never
+  open a terminal: intro, Quick Start (a prompt to paste), Before You
+  Record, the AGENTS.md snippet. Below `## Reference` is what a CLI's README
+  documents by convention: Installation, Commands, Options, Steps File,
+  Narration, License. Commands and Options repeat `--help`, so change them
+  in the same commit as any flag. Agent guidance belongs in `SKILL.md`,
+  design rationale and history here or in `CHANGELOG.md`. Links must be
+  absolute: the alias publishes the file from another directory.
 - `alias/agentic-demo/` — the `agentic-demo` npm package: a bin that resolves
   `@popoverai/browser-automation` and imports its `dist/cli.js`, so
   `npx agentic-demo …` works without a second implementation. The main
   package's bin is spelled `agentic-demo` too, so there is one name to type
-  however the CLI got there.
+  however the CLI got there. Its `prepack` copies in the root README
+  (gitignored here), so both npm pages are the same page.
 - `tests/` — vitest, one file per subject; ffmpeg and agent-browser are
   stubbed (an exec seam and a fake stream WebSocket server), speech models
   are `MockSpeechModelV4` from `ai/test`
@@ -114,9 +124,12 @@ binary.
 
 - The renderer takes an AI SDK `SpeechModel`; it never imports a provider
   package. Provider resolution is a CLI concern (`speechProviders.ts`).
-- Don't use `agent-browser record` for capture: it opens a fresh context in a
-  new tab (page state is lost between steps), needs ffmpeg on PATH, and
-  captures at 10 fps. The stream is the right surface.
+- Capture is `agent-browser stream`, not `agent-browser record`: the stream
+  hands over frames stamped on the step clock, so segments fall out of the
+  capture, and it needs no ffmpeg on PATH (record does). Before agent-browser
+  0.37, `record` also opened a fresh context in a new tab and captured at
+  10 fps. Those reasons are gone, so weigh only the current ones if this is
+  ever revisited.
 - Anything an agent needs to use the CLI belongs in `SKILL.md` or the zod
   descriptions in `stepsFile.ts`, not only in the README — `agentic-demo
 guide` / `schema` are how a CLI-only agent learns the tool.

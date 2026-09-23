@@ -9,6 +9,12 @@ import {
 } from "../src/stepsFile.js";
 
 describe("steps file", () => {
+	it("the example signs in without writing a password into the file", () => {
+		const commands = exampleStepsFile().steps.flatMap((s) => s.commands);
+		expect(commands).toContainEqual(["auth", "login", "demo", "--no-navigate"]);
+		expect(JSON.stringify(exampleStepsFile())).not.toMatch(/password|hunter2/i);
+	});
+
 	it("accepts the example and a minimal file", () => {
 		expect(StepsFileSchema.safeParse(exampleStepsFile()).success).toBe(true);
 		const minimal = parseStepsFileText(
