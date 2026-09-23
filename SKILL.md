@@ -134,9 +134,11 @@ echo "$PASSWORD" | agent-browser auth save demo --url https://app.example.com/lo
 ```
 
 then sign in inside a step with `["auth", "login", "demo", "--no-navigate"]`
-(`--no-navigate` keeps the page the file's `url` opened). If the demo isn't
-about signing in, sign in before recording and leave `url` out, so the
-recording starts on the signed-in page. Use a demo account: the video shows
+(`--no-navigate` keeps the page the file's `url` opened, and fails the step
+unless that page's origin matches the `--url` saved with the credential; for
+a login hosted elsewhere, such as an identity provider, drop `--no-navigate`).
+If the demo isn't about signing in, sign in before recording and leave `url`
+out, so the recording starts on the signed-in page. Use a demo account: the video shows
 whatever is on screen.
 
 ## Narration

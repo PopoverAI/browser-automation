@@ -44,7 +44,7 @@ npx agentic-demo --help              # Without installing
 npm install -g agentic-demo@latest   # Update
 ```
 
-Requires Node.js 22+. Installing downloads an ffmpeg binary (about 77 MB). agent-browser runs as `npx agent-browser`, which uses your installed copy if there is one. The same CLI is also published as [`@popoverai/browser-automation`](https://www.npmjs.com/package/@popoverai/browser-automation).
+Requires Node.js 22+. Installing downloads an ffmpeg binary (about 77 MB); pnpm 10 blocks that download until you run `pnpm approve-builds`, or point `--ffmpeg` / `FFMPEG_BIN` at another ffmpeg. agent-browser runs as `npx agent-browser`, which uses your installed copy if there is one. The same CLI is also published as [`@popoverai/browser-automation`](https://www.npmjs.com/package/@popoverai/browser-automation).
 
 Versions are 0.x, so a minor version can break things. The [changelog](https://github.com/PopoverAI/browser-automation/blob/main/CHANGELOG.md) lists every change.
 
@@ -88,7 +88,7 @@ Without `--json`, stdout is the path to `final.mp4` and progress goes to stderr.
     {
       "narrate": "Sign in with the demo account.", // Said over this step
       "commands": [
-        ["auth", "login", "demo", "--no-navigate"],
+        ["auth", "login", "demo", "--no-navigate"], // "demo": credentials saved with `agent-browser auth save`
         ["wait", "--load", "networkidle"],
       ], // agent-browser commands, one argv array each
       "trailingDelay": 1000, // Optional: ms to keep capturing after the last command
