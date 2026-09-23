@@ -1,13 +1,15 @@
 {
 	"name": "@popoverai/browser-automation",
 	"version": "0.15.0",
-	"description": "Narrated demo videos from agent-browser flows: run steps as agent-browser batches, capture the viewport stream, render an mp4 with per-step TTS.",
+	"description": "Narrated demo videos of your web app, recorded by your coding agent.",
 	"keywords": [
 		"demo",
 		"video",
 		"narration",
 		"agent-browser",
-		"screencast"
+		"screencast",
+		"ai-agents",
+		"product-demo"
 	],
 	"license": "Apache-2.0",
 	"author": "Popover AI",

@@ -1,6 +1,10 @@
 # agentic-demo
 
-Narrated demo videos from [agent-browser](https://www.npmjs.com/package/agent-browser) flows. Write the steps and the words to say over them; get an mp4.
+Narrated demo videos of your web app, recorded by your coding agent.
+
+Ask Claude Code, Codex, Cursor, or any agent that can run shell commands for a walkthrough of a flow. It explores the app with [agent-browser](https://www.npmjs.com/package/agent-browser), writes a short script (the browser commands for each step and a sentence to say over it), and agentic-demo records the script as an mp4 with a voiceover. No screen recorder, no microphone, no editing.
+
+The script stays behind as a file. Nothing improvises during the take, so the same script gives the same video, and when the app changes you re-record with one command instead of redoing the demo. If a step no longer works, the CLI names the command that failed.
 
 ## Installation
 
@@ -50,6 +54,18 @@ Versions are 0.x, so a minor version can break things. The [changelog](https://g
 
 ## Quick Start
 
+With `OPENAI_API_KEY` set where your agent runs commands (for the voiceover; without it, ask for a silent cut), ask your agent:
+
+```
+Record a narrated demo of signing up on http://localhost:3000 with agentic-demo. Run `npx agentic-demo guide` first.
+```
+
+You get an mp4, plus the steps file it was recorded from. To re-record after a change, run `agentic-demo steps.json --out ./demo`.
+
+### By Hand
+
+This is what the agent does, and what you run to adjust a script yourself:
+
 ```bash
 # 1. Find the flow with agent-browser
 agent-browser open https://app.example.com/login
@@ -75,8 +91,6 @@ agentic-demo validate steps.json
 agentic-demo steps.json --silent --out ./demo
 OPENAI_API_KEY=... agentic-demo steps.json --out ./demo   # → ./demo/final.mp4
 ```
-
-Steps are a script, not a prompt. Every command runs exactly as written and the narration is the sentence you wrote, so the same file records the same video. An agent usually writes the steps file; see [Usage with AI Agents](#usage-with-ai-agents).
 
 ## Commands
 
@@ -223,15 +237,11 @@ The stream only sends frames when the page changes. A step that changes nothing 
 
 ## Usage with AI Agents
 
-### Just ask the agent
-
-```
-Use agentic-demo to record a narrated demo of the signup flow. Run `npx agentic-demo guide` first.
-```
-
-`agentic-demo guide` prints the full workflow, matched to the installed version: exploring with agent-browser, writing and validating the steps file, rehearsing with `--silent`, and reading failures. `agentic-demo --help` points agents to it too.
+The [Quick Start](#quick-start) prompt is usually all an agent needs. `agentic-demo guide` prints the full workflow, matched to the installed version: exploring with agent-browser, writing and validating the steps file, rehearsing with `--silent`, and reading failures. `agentic-demo --help` points agents to it too.
 
 ### AGENTS.md / CLAUDE.md
+
+So your agent reaches for it without being told:
 
 ```markdown
 ## Demo Videos
