@@ -6,6 +6,16 @@ Ask Claude Code, Codex, Cursor, or any agent that can run shell commands for a w
 
 The script stays behind as a file. Nothing improvises during the take, so the same script gives the same video, and when the app changes you re-record with one command instead of redoing the demo. If a step no longer works, the CLI names the command that failed.
 
+## Quick Start
+
+Paste this into Claude Code, or any coding agent:
+
+```
+Use `agentic-demo` to create a demo of this feature. Start from `npx agentic-demo --help`.
+```
+
+The agent does the rest. It will tell you if it needs anything from you, such as an OpenAI API key for the voiceover. You get a video file, plus the script it was made from, so you can ask for a fresh recording whenever the feature changes.
+
 ## Installation
 
 ### Global Installation (recommended)
@@ -52,46 +62,6 @@ Versions are 0.x, so a minor version can break things. The [changelog](https://g
 - **ffmpeg** - Bundled through `ffmpeg-static`, which downloads a binary at install time. pnpm 10 blocks that download until you run `pnpm approve-builds`. Otherwise pass `--ffmpeg <path>` or set `FFMPEG_BIN`; any build with libx264 and aac works.
 - **A narration key** - `OPENAI_API_KEY` by default (see [Narration](#narration)). Not needed with `--silent`.
 
-## Quick Start
-
-Paste this into Claude Code, or any coding agent:
-
-```
-Use `agentic-demo` to create a demo of this feature. Start from `npx agentic-demo --help`.
-```
-
-The agent does the rest. It will tell you if it needs anything from you, such as an OpenAI API key for the voiceover. You get a video file, plus the script it was made from, so you can ask for a fresh recording whenever the feature changes.
-
-### By Hand
-
-This is what the agent does, and what you run to adjust a script yourself:
-
-```bash
-# 1. Find the flow with agent-browser
-agent-browser open https://app.example.com/login
-agent-browser snapshot -i                # Interactive elements with refs
-
-# 2. Write it as steps: agent-browser commands, and the sentence to say over each
-cat > steps.json <<'JSON'
-{
-  "steps": [
-    { "narrate": "Sign in with the demo account.",
-      "commands": [["fill", "#email", "demo@example.com"],
-                   ["fill", "#password", "hunter2"],
-                   ["find", "text", "Sign in", "click"],
-                   ["wait", "--load", "networkidle"]] },
-    { "narrate": "The dashboard shows this week's numbers.",
-      "commands": [["find", "text", "This week", "click"], ["wait", "500"]] }
-  ]
-}
-JSON
-
-# 3. Check it, rehearse it without a key, then record
-agentic-demo validate steps.json
-agentic-demo steps.json --silent --out ./demo
-OPENAI_API_KEY=... agentic-demo steps.json --out ./demo   # → ./demo/final.mp4
-```
-
 ## Commands
 
 ```bash
@@ -101,6 +71,8 @@ agentic-demo guide                   # Print the workflow guide for agents
 agentic-demo schema                  # Print the steps file's JSON Schema
 agentic-demo example                 # Print a starter steps file
 ```
+
+For the step-by-step workflow, run `agentic-demo guide`.
 
 ## Steps File
 

@@ -57,7 +57,8 @@ an observation rather than a problem.
   shipped in the package so it always matches the binary
 - `README.md` — the npm page of both packages, for a person asking "what is
   this for and how do I use it". Its structure follows agent-browser's
-  README. Design rationale and history belong here or in `CHANGELOG.md`, not
+  README, except that Quick Start comes first: its reader may never open a
+  terminal. Design rationale and history belong here or in `CHANGELOG.md`, not
   there, and links in it must be absolute: the alias publishes it from
   another directory.
 - `alias/agentic-demo/` — the `agentic-demo` npm package: a bin that resolves
