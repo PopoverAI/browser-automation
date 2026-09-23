@@ -180,8 +180,7 @@ the bump — the changelog is the release note; there is no other.
 
 There is no `production` branch — `main` is the trunk — and no changesets: the
 scaffolding inherited from the upstream fork was never initialised and has been
-removed. (`pr-review.yml` still mentions changesets in a comment on a branch
-that is inert here; it is kept verbatim for diffability with dotrequirements.)
+removed.
 
 ## CI
 
@@ -192,31 +191,20 @@ that is inert here; it is kept verbatim for diffability with dotrequirements.)
 ## PR Reviews
 
 Every PR gets a formal `claude[bot]` review from CI on each push
-(`pr-review.yml` + the `ci-review-pr` skill). An APPROVE ends the loop: later
-pushes are not reviewed. If you push a substantive change to an already-approved
-PR, include `[re-review]` in a commit subject (the message's first line) — that
-buys one fresh round on the changes since the approved commit, and its verdict
-then governs as usual. The subject only: mentioning the tag in a commit body
-does not trigger a round.
+(`pr-review.yml` calls the shared workflow and skill in
+[PopoverAI/claude-pr-review](https://github.com/PopoverAI/claude-pr-review),
+where the design lives). An APPROVE ends the loop: later pushes are not
+reviewed. If you push a substantive change to an already-approved PR, include
+`[re-review]` in a commit subject (the message's first line) — that buys one
+fresh round on the changes since the approved commit, and its verdict then
+governs as usual. The subject only: mentioning the tag in a commit body does
+not trigger a round.
 
-The review path is ported from `PopoverAI/dotrequirements`, whose
-`docs/working/ci-pr-review.md` is the design write-up. Both copies are kept as
-close as possible so a fix in either ports by diff. Two deliberate divergences,
-both commented in the workflow: this repo is public, so the decide step only
-reviews PRs whose head branch lives in this repository (pushing one already
-requires write access), falling back to an OWNER/MEMBER/COLLABORATOR check for
-a collaborator working from a fork; and the Fable/release branch is inert here,
-since there is no `production` branch.
-
-Don't narrow that gate to `author_association` alone — it isn't dependable.
-PR #8 reported `CONTRIBUTOR` for an org member whose comment on PR #6 reported
-`MEMBER`, and an assoc-only gate skipped a maintainer's own PR while reporting
-green.
-
-Iterate on review _judgment_ in `.claude/skills/ci-review-pr/SKILL.md`, not in
-the workflow: `claude-code-action` skips any run whose workflow file differs
-from `main`, so edits to `pr-review.yml` land unexercised and are only proven by
-the next PR.
+This repo is public, so the shared workflow's trust gate matters here: it
+reviews only PRs whose head branch lives in this repository (pushing one
+already requires write access), falling back to an OWNER/MEMBER/COLLABORATOR
+check for a collaborator working from a fork. Changes to the review, its
+judgment or its gate, belong in the shared repo, not here.
 
 ### Agent-authored PRs
 
