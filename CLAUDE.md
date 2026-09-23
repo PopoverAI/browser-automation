@@ -214,3 +214,5 @@ than typed by hand. (Unlike dotrequirements, this repo has no Linear
 sessions.) They still go through a human before merging, so review them
 normally; just don't flag the absence of process artifacts this repo has never
 kept, such as working-design documents.
+
+<!-- Shared PR review smoke test. -->
