@@ -54,13 +54,11 @@ Versions are 0.x, so a minor version can break things. The [changelog](https://g
 
 ## Quick Start
 
-With `OPENAI_API_KEY` set where your agent runs commands (for the voiceover; without it, ask for a silent cut), ask your agent:
-
 ```
-Record a narrated demo of signing up on http://localhost:3000 with agentic-demo. Run `npx agentic-demo guide` first.
+Use `agentic-demo` to create a demo of this feature. Start from `npx agentic-demo --help`.
 ```
 
-You get an mp4, plus the steps file it was recorded from. To re-record after a change, run `agentic-demo steps.json --out ./demo`.
+The voiceover needs `OPENAI_API_KEY` wherever your agent runs commands; without it, ask for a silent cut. You get an mp4, plus the steps file it was recorded from. To re-record after a change, run `agentic-demo steps.json --out ./demo`.
 
 ### By Hand
 
