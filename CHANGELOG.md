@@ -5,6 +5,24 @@
 Versions are cut by hand with `npm version` / `npm publish` (see
 CLAUDE.md → Releases). This package is 0.x: a minor bump is a breaking change.
 
+## 0.15.1 — 2026-09-23
+
+Changed
+
+- **`agentic-demo example` signs in without a password in the file.** The
+  starter steps file, and the guide's example, used to `fill` a password
+  field, which left the password in plain text in a file people keep and
+  re-record from. Both now sign in with agent-browser's encrypted
+  credential store: save it once with `agent-browser auth save`, then use
+  `["auth", "login", "demo", "--no-navigate"]` in a step. `agentic-demo
+  guide` gains a "Signing in" section.
+- **One README for both npm pages**, rewritten for the person asking
+  "what is this for and how do I use it", with a reference section below.
+  The `agentic-demo` package now copies it in when packed, so the two pages
+  cannot drift.
+- `package.json` declares `engines.node >=22`, the floor `ai@7` already
+  set, and shares its description and keywords with `agentic-demo`.
+
 ## 0.15.0 — 2026-09-21
 
 **Breaking.** The CLI's bin is now `agentic-demo`; `browser-demo` is gone.
