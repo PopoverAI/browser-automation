@@ -73,9 +73,7 @@ agentic-demo record FILE      # record (also: agentic-demo FILE)
     {
       "narrate": "Sign in with the demo account.",
       "commands": [
-        ["fill", "#email", "demo@example.com"],
-        ["fill", "#password", "hunter2"],
-        ["find", "text", "Sign in", "click"],
+        ["auth", "login", "demo", "--no-navigate"],
         ["wait", "--load", "networkidle"]
       ]
     },
@@ -123,6 +121,23 @@ Do **not** use `text=…` as a selector — agent-browser does not accept that
 syntax; use `find text <value> click`. Do not put `tab new`, `tab close`,
 `connect`, or `close` in steps: they change which tab or context is being
 captured. Leave out `record` too: agentic-demo is already capturing.
+
+## Signing in
+
+Never put a password in a step. The steps file is kept and re-recorded
+from, so a `fill` with a password leaves it in plain text. Use
+agent-browser's encrypted credential store instead:
+
+```bash
+echo "$PASSWORD" | agent-browser auth save demo --url https://app.example.com/login \
+  --username demo@example.com --password-stdin
+```
+
+then sign in inside a step with `["auth", "login", "demo", "--no-navigate"]`
+(`--no-navigate` keeps the page the file's `url` opened). If the demo isn't
+about signing in, sign in before recording and leave `url` out, so the
+recording starts on the signed-in page. Use a demo account: the video shows
+whatever is on screen.
 
 ## Narration
 

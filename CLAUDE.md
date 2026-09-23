@@ -55,12 +55,15 @@ an observation rather than a problem.
 - `src/timeline.ts` — `CapturedFrame` / `TimelineEntry` shared types
 - `SKILL.md` — the agent-facing guide, printed by `agentic-demo guide`;
   shipped in the package so it always matches the binary
-- `README.md` — the npm page of both packages, for a person asking "what is
-  this for and how do I use it". Its structure follows agent-browser's
-  README, except that Quick Start comes first: its reader may never open a
-  terminal. Design rationale and history belong here or in `CHANGELOG.md`, not
-  there, and links in it must be absolute: the alias publishes it from
-  another directory.
+- `README.md` — the npm page of both packages, in two parts. The top is for
+  a person asking "what is this for and how do I use it", who may never
+  open a terminal: intro, Quick Start (a prompt to paste), Before You
+  Record, the AGENTS.md snippet. Below `## Reference` is what a CLI's README
+  documents by convention: Installation, Commands, Options, Steps File,
+  Narration, License. Commands and Options repeat `--help`, so change them
+  in the same commit as any flag. Agent guidance belongs in `SKILL.md`,
+  design rationale and history here or in `CHANGELOG.md`. Links must be
+  absolute: the alias publishes the file from another directory.
 - `alias/agentic-demo/` — the `agentic-demo` npm package: a bin that resolves
   `@popoverai/browser-automation` and imports its `dist/cli.js`, so
   `npx agentic-demo …` works without a second implementation. The main
