@@ -54,11 +54,13 @@ Versions are 0.x, so a minor version can break things. The [changelog](https://g
 
 ## Quick Start
 
+Paste this into Claude Code, or any coding agent:
+
 ```
 Use `agentic-demo` to create a demo of this feature. Start from `npx agentic-demo --help`.
 ```
 
-The voiceover needs `OPENAI_API_KEY` wherever your agent runs commands; without it, ask for a silent cut. You get an mp4, plus the steps file it was recorded from. To re-record after a change, run `agentic-demo steps.json --out ./demo`.
+The agent does the rest. It will tell you if it needs anything from you, such as an OpenAI API key for the voiceover. You get a video file, plus the script it was made from, so you can ask for a fresh recording whenever the feature changes.
 
 ### By Hand
 
