@@ -52,6 +52,10 @@ an observation rather than a problem.
   pure-JS silent WAV when no `speech` is configured
 - `src/speechProviders.ts` — CLI-side `--tts <provider[:model]>` resolution;
   openai, elevenlabs, hume, deepgram are bundled
+- `src/speechEndpoint.ts` — `--tts <url>`: a speech model that asks an HTTP
+  endpoint for each line, so the recording machine holds no provider key.
+  The request it sends is a public contract, documented in README.md →
+  "Voice endpoint"
 - `src/timeline.ts` — `CapturedFrame` / `TimelineEntry` shared types
 - `SKILL.md` — the agent-facing guide, printed by `agentic-demo guide`;
   shipped in the package so it always matches the binary

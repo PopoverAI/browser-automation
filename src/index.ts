@@ -38,9 +38,21 @@ export type {
 	SynthesizedAudio,
 } from "./speech.js";
 
-export { estimateSpeechSeconds, silentWav, synthesize } from "./speech.js";
+export {
+	estimateSpeechSeconds,
+	silentWav,
+	stepSpeech,
+	synthesize,
+} from "./speech.js";
 export type { ResolveSpeechDeps, SpeechFlags } from "./speechConfig.js";
 export { resolveSpeech } from "./speechConfig.js";
+export type { EndpointSpeechModelOptions } from "./speechEndpoint.js";
+export {
+	createEndpointSpeechModel,
+	isSpeechEndpointUrl,
+	SPEECH_ENDPOINT_TOKEN_ENV,
+	SpeechEndpointError,
+} from "./speechEndpoint.js";
 export type { ModuleImporter, SpeechSpec } from "./speechProviders.js";
 export {
 	assertSpeechCredentials,

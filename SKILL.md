@@ -53,7 +53,8 @@ agentic-demo record FILE      # record (also: agentic-demo FILE)
    ```bash
    OPENAI_API_KEY=… agentic-demo record steps.json --out ./demo
    ```
-5. Report the path printed on stdout. `--json` gives a per-step summary:
+5. Report the path printed on stdout. `--json` adds the video's total length
+   (`durationSeconds`) and a per-step summary:
    `captureSeconds` (how long the commands took), `narrationSeconds` (the
    speech), `renderedSeconds` (the segment's length in the video — the larger
    of the two, plus a short tail), and `frameCount`; a step with
@@ -156,6 +157,11 @@ browser and tells you which variable is missing.
   narration text, so timing matches a narrated render.
 - Any other AI SDK provider: `--tts acme:model` loads `@ai-sdk/acme` from the
   current project if installed.
+- **A voice endpoint** instead of a provider: `--tts https://…`, or
+  `"endpoint": "https://…"` in the `speech` block. The CLI sends the
+  endpoint `AGENTIC_DEMO_TTS_TOKEN` as its credential and needs no provider
+  key. It narrates step 1 before opening the browser, so a refusal arrives
+  before any recording.
 
 ## Cloud browsers
 
@@ -178,6 +184,10 @@ Or hand agent-browser a CDP URL you provisioned yourself:
   which commands in the step ran.
 - **`<VAR> is not set (needed for --tts …)`** — export the key, pick another
   provider, or `--silent`.
+- **`the voice endpoint … refused to narrate (HTTP <status>):`** — the lines
+  after it are the endpoint's own message, such as a used-up quota with an
+  upgrade link. Show them to the user word for word; don't retry, and don't
+  switch to another voice source or `--silent` unless the user asks.
 - **`could not load @ai-sdk/<name>`** — install it in the project.
 - **`ffmpeg-static binary not found`** — run `pnpm approve-builds` (pnpm 10
   blocks postinstall downloads) or pass `--ffmpeg <path>`.

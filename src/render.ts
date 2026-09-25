@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import ffmpegPath from "ffmpeg-static";
-import { type SpeechOptions, synthesize } from "./speech.js";
+import {
+	type SpeechOptions,
+	type SynthesizedAudio,
+	stepSpeech,
+	synthesize,
+} from "./speech.js";
 import type { CapturedFrame, TimelineEntry } from "./timeline.js";
 
 /**
@@ -41,6 +46,12 @@ export interface RenderTimelineOptions {
 	 * track sized to each step's narration text.
 	 */
 	speech?: SpeechOptions;
+	/**
+	 * Narration already synthesised, by timeline index; the rest is
+	 * synthesised here. Lets a caller narrate a line before recording (to
+	 * find out early that the voice works) without paying for it twice.
+	 */
+	narration?: ReadonlyArray<SynthesizedAudio | undefined>;
 	/** Cancels in-flight speech synthesis. */
 	signal?: AbortSignal;
 	/**
@@ -75,6 +86,8 @@ export interface RenderedSegment {
 export interface RenderTimelineResult {
 	videoPath: string;
 	outputDir: string;
+	/** Length of the final video in seconds, as ffmpeg reads the file. */
+	durationSeconds: number;
 	segments: RenderedSegment[];
 }
 
@@ -143,6 +156,7 @@ export async function renderTimeline(
 					frames: options.frames,
 					outputDir,
 					speech: options.speech,
+					narration: options.narration?.[i],
 					signal: options.signal,
 					ffmpeg,
 					exec,
@@ -181,6 +195,7 @@ export async function renderTimeline(
 			"copy",
 			finalPath,
 		]);
+		const durationSeconds = probeDurationSeconds(exec, ffmpeg, finalPath);
 
 		if (!options.keepIntermediates) {
 			cleanupIntermediates(outputDir, segments);
@@ -194,6 +209,7 @@ export async function renderTimeline(
 		return {
 			videoPath: finalPath,
 			outputDir,
+			durationSeconds,
 			segments,
 		};
 	} catch (err) {
@@ -209,14 +225,24 @@ interface SegmentInput {
 	frames: CapturedFrame[];
 	outputDir: string;
 	speech?: SpeechOptions;
+	narration?: SynthesizedAudio;
 	signal?: AbortSignal;
 	ffmpeg: string;
 	exec: ExecRunner;
 }
 
 async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
-	const { entry, index, frames, outputDir, speech, signal, ffmpeg, exec } =
-		input;
+	const {
+		entry,
+		index,
+		frames,
+		outputDir,
+		speech,
+		narration: premade,
+		signal,
+		ffmpeg,
+		exec,
+	} = input;
 
 	// Filter frames to the entry's [startTime, endTime] window.
 	let segmentFrames = frames.filter(
@@ -243,11 +269,11 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
 	}
 
 	// 1. Narrate (speech model, or silence sized to the text).
-	const narration = await synthesize(
-		entry.narrative,
-		speech && entry.speech ? { ...speech, ...entry.speech } : speech,
-		{ signal },
-	);
+	const narration =
+		premade ??
+		(await synthesize(entry.narrative, stepSpeech(speech, entry.speech), {
+			signal,
+		}));
 	const audioPath = join(outputDir, `audio-${index}.${narration.format}`);
 	writeFileSync(audioPath, Buffer.from(narration.audio));
 
@@ -267,7 +293,12 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
 	}
 
 	// 3. Probe the narration's duration.
-	const audioSeconds = probeDurationSeconds(exec, ffmpeg, audioPath, index);
+	const audioSeconds = probeDurationSeconds(
+		exec,
+		ffmpeg,
+		audioPath,
+		`segment ${index}`,
+	);
 
 	// 4. Build the concat demuxer file with per-frame durations.
 	//
@@ -346,7 +377,12 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
 	]);
 
 	// 5b. Measure what ffmpeg actually produced.
-	const videoSeconds = probeDurationSeconds(exec, ffmpeg, videoOnlyPath, index);
+	const videoSeconds = probeDurationSeconds(
+		exec,
+		ffmpeg,
+		videoOnlyPath,
+		`segment ${index}`,
+	);
 
 	// 5c. Mux: copy the video, pad the narration with silence to its length.
 	//     `apad=whole_dur` is deterministic on every build; the streams end
@@ -391,13 +427,14 @@ function probeDurationSeconds(
 	exec: ExecRunner,
 	ffmpeg: string,
 	file: string,
-	index: number,
+	/** What the file is, for the error message. */
+	label = "the final video",
 ): number {
 	const probe = exec(ffmpeg, ["-i", file]);
 	const m = probe.stderr.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2}\.\d{2})/);
 	if (!m) {
 		throw new Error(
-			`renderTimeline: could not parse duration of ${file} from ffmpeg output for segment ${index}. stderr was: ${probe.stderr.slice(0, 500)}`,
+			`renderTimeline: could not parse duration of ${file} from ffmpeg output for ${label}. stderr was: ${probe.stderr.slice(0, 500)}`,
 		);
 	}
 	return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);

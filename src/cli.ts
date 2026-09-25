@@ -27,6 +27,7 @@ import {
 	DemoStepError,
 	stepFailureHints,
 } from "./agentBrowserRecorder.js";
+import { type SynthesizedAudio, stepSpeech, synthesize } from "./speech.js";
 import { resolveSpeech } from "./speechConfig.js";
 import {
 	exampleStepsFile,
@@ -79,6 +80,17 @@ async function main(file: string, opts: CliOptions): Promise<void> {
 	const speech = opts.silent
 		? undefined
 		: await resolveSpeech(steps.speech, opts, { log });
+	// Narrate the first line now: a refused key, token or quota shows up
+	// before the browser work instead of after it. Render reuses the audio,
+	// so a successful run pays for no extra line.
+	let firstLine: SynthesizedAudio | undefined;
+	if (speech) {
+		log("narration: synthesising step 1 to check the voice works");
+		firstLine = await synthesize(
+			steps.steps[0].narrate,
+			stepSpeech(speech, steps.steps[0].speech),
+		);
+	}
 
 	if (steps.url) {
 		log(`open ${steps.url}`);
@@ -125,12 +137,15 @@ async function main(file: string, opts: CliOptions): Promise<void> {
 		outputDir: opts.out ? resolve(opts.out) : undefined,
 		keepIntermediates: opts.keep,
 		speech,
+		narration: [firstLine],
 		ffmpegPath: opts.ffmpeg,
 	});
 
 	const summary = {
 		videoPath: result.videoPath,
 		outputDir: result.outputDir,
+		/** Length of the final video. */
+		durationSeconds: result.durationSeconds,
 		segments: result.timeline.map((e, i) => ({
 			index: i,
 			instruction: e.instruction,
@@ -152,6 +167,7 @@ async function main(file: string, opts: CliOptions): Promise<void> {
 				`  segment ${s.index}: ${s.frameCount} frames, ${s.captureSeconds.toFixed(1)}s captured, ${s.narrationSeconds?.toFixed(1) ?? "?"}s narration → ${s.renderedSeconds?.toFixed(1) ?? "?"}s rendered — ${s.instruction}`,
 			);
 		}
+		log(`final video: ${summary.durationSeconds.toFixed(1)}s`);
 		process.stdout.write(`${result.videoPath}\n`);
 	}
 }
@@ -166,8 +182,8 @@ const recordOptions = (cmd: typeof program) =>
 	cmd
 		.option("-o, --out <dir>", "output directory (default: a unique temp dir)")
 		.option(
-			"--tts <provider[:model]>",
-			'narration provider, e.g. "elevenlabs:eleven_v3" (default: openai:gpt-4o-mini-tts)',
+			"--tts <provider[:model]|url>",
+			'narration provider, e.g. "elevenlabs:eleven_v3" (default: openai:gpt-4o-mini-tts), or the URL of a voice endpoint (sent AGENTIC_DEMO_TTS_TOKEN)',
 		)
 		.option("--voice <voice>", "voice id for the narration provider")
 		.option("--silent", "render a silent audio track (no key needed)")
@@ -236,9 +252,11 @@ program
 	.action((file: string) => {
 		try {
 			const steps = parseStepsFile(resolve(file));
-			const provider = steps.speech?.provider ?? "openai";
+			const source =
+				steps.speech?.endpoint ??
+				`${steps.speech?.provider ?? "openai"}${steps.speech?.model ? `:${steps.speech.model}` : ""}`;
 			process.stdout.write(
-				`${file}: ok — ${steps.steps.length} step(s), ${steps.url ? `opens ${steps.url}` : "records the daemon's current page"}, narration via ${provider}${steps.speech?.model ? `:${steps.speech.model}` : ""}\n`,
+				`${file}: ok — ${steps.steps.length} step(s), ${steps.url ? `opens ${steps.url}` : "records the daemon's current page"}, narration via ${source}\n`,
 			);
 		} catch (err) {
 			fail(err instanceof StepsFileError ? err.message : err);
