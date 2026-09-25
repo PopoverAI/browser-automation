@@ -15,7 +15,7 @@
 	"author": "Popover AI",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/PopoverAI/browser-automation",
+		"url": "git+https://github.com/PopoverAI/browser-automation.git",
 		"directory": "alias/agentic-demo"
 	},
 	"type": "module",
