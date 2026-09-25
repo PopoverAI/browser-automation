@@ -164,8 +164,10 @@ does not match. Nothing else about the alias changes between releases.
 If a publish fails, fix the cause: merging the fix to `main` retries it,
 because the trigger is "not yet on npm" rather than "changed in this push". If
 the main package published and the alias did not, the next run publishes only
-the alias. To publish or tag a specific commit already on `main`, start the
-workflow by hand with its SHA; only a commit on `main` can be published. The
+the alias; so does "Re-run failed jobs", which asks npm again before each
+publish. To publish or tag a specific commit already on `main`, start the
+workflow by hand with its SHA; only a commit on `main` can be published, and
+only one made after this workflow landed (older commits lack its scripts). The
 publish job uses the `npm` GitHub environment, which only `main` may use and
 which npm's trusted-publisher settings for both packages name.
 

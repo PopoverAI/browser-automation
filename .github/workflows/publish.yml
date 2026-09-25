@@ -14,8 +14,10 @@ name: publish
 # publish, and an ordinary push to main creates no deployment record.
 #
 # Ported from PopoverAI/convex-simple-authz; keep the two close so a fix in
-# either ports by diff. The differences: a second package (the alias), and
-# provenance, which npm adds on its own here because this repo is public.
+# either ports by diff. The differences: a second package (the alias); the
+# publish job asking npm again, so a re-run after a partial publish finishes
+# it; and provenance, which npm adds on its own here because this repo is
+# public.
 
 on:
   push:
@@ -80,33 +82,11 @@ jobs:
       - id: check
         name: Are these versions on npm yet?
         run: |
-          # Prints true when NAME@VERSION still needs publishing. Only an
-          # E404 means "not published". Any other failure (network, a
-          # registry error) stops the run rather than being read as a
-          # version to publish.
-          needs_publish() {
-            local out
-            if out=$(npm view "$1@$2" version 2>npm-view.err); then
-              if [ "$out" != "$2" ]; then
-                echo "::error::npm view returned '$out' for $1@$2." >&2
-                return 1
-              fi
-              echo "::notice::$1@$2 is already on npm." >&2
-              echo false
-            elif grep -q "code E404" npm-view.err; then
-              echo "::notice::$1@$2 is not on npm yet — publishing." >&2
-              echo true
-            else
-              cat npm-view.err >&2
-              echo "::error::Could not tell whether $1@$2 is on npm." >&2
-              return 1
-            fi
-          }
           NAME=$(jq -r .name package.json)
           VERSION=$(jq -r .version package.json)
           ALIAS=$(jq -r .name alias/agentic-demo/package.json)
-          PUBLISH=$(needs_publish "$NAME" "$VERSION")
-          PUBLISH_ALIAS=$(needs_publish "$ALIAS" "$VERSION")
+          PUBLISH=$(.github/scripts/needs-publish.sh "$NAME" "$VERSION")
+          PUBLISH_ALIAS=$(.github/scripts/needs-publish.sh "$ALIAS" "$VERSION")
           {
             echo "name=$NAME"
             echo "version=$VERSION"
@@ -139,6 +119,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - id: recheck
+        name: Skip what an earlier attempt already published
+        # "Re-run failed jobs" reuses check's outputs. If an attempt published
+        # the main package and then failed, those still say to publish it, and
+        # npm would refuse it before the alias's turn. So ask npm again.
+        env:
+          NAME: ${{ needs.check.outputs.name }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          ALIAS=$(jq -r .name alias/agentic-demo/package.json)
+          PUBLISH=$(.github/scripts/needs-publish.sh "$NAME" "$VERSION")
+          PUBLISH_ALIAS=$(.github/scripts/needs-publish.sh "$ALIAS" "$VERSION")
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "publish_alias=$PUBLISH_ALIAS" >> "$GITHUB_OUTPUT"
+
       - uses: pnpm/action-setup@v6
         # No version: reads packageManager from package.json. Giving both
         # fails with ERR_PNPM_BAD_PM_VERSION when they disagree.
@@ -154,7 +149,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Publish @popoverai/browser-automation (trusted publishing)
-        if: needs.check.outputs.publish == 'true'
+        if: steps.recheck.outputs.publish == 'true'
         # `npm publish` runs prepublishOnly first: typecheck, tests, a clean
         # build. Any failure stops the publish. Provenance needs no flag: npm
         # attests trusted-publishing releases from a public repository itself.
@@ -163,6 +158,8 @@ jobs:
       - name: Tag the published commit
         # Before the alias, so an alias failure leaves the tag where the main
         # package was published; the next run publishes only the alias.
+        # Keyed to check, not recheck: a re-run after the publish succeeded
+        # and the tag push failed still has this run's commit to tag.
         if: needs.check.outputs.publish == 'true'
         env:
           NAME: ${{ needs.check.outputs.name }}
@@ -175,6 +172,6 @@ jobs:
       - name: Publish agentic-demo (trusted publishing)
         # After the main package: the alias depends on the version just
         # published. Its prepack copies the root README in.
-        if: needs.check.outputs.publish_alias == 'true'
+        if: steps.recheck.outputs.publish_alias == 'true'
         working-directory: alias/agentic-demo
         run: npm publish --access public
