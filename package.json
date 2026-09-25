@@ -46,7 +46,7 @@
 		"lint": "biome ci",
 		"format": "biome format --write",
 		"clean": "rm -rf dist",
-		"prepublishOnly": "pnpm clean && pnpm build",
+		"prepublishOnly": "pnpm typecheck && pnpm test && pnpm clean && pnpm build",
 		"check": "biome check --write"
 	},
 	"dependencies": {

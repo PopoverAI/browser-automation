@@ -68,3 +68,9 @@ jobs:
         # block. Keep this green — a red-on-arrival gate trains everyone to
         # ignore red.
         run: pnpm lint
+
+      - name: The alias matches the release
+        # A version bump must move agentic-demo with it (see CLAUDE.md →
+        # Releases). Checked here so a mismatch fails the PR, not the publish
+        # after merge; publish.yml checks again.
+        run: .github/scripts/check-versions.sh
