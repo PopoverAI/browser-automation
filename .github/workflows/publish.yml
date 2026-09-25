@@ -14,10 +14,8 @@ name: publish
 # publish, and an ordinary push to main creates no deployment record.
 #
 # Ported from PopoverAI/convex-simple-authz; keep the two close so a fix in
-# either ports by diff. The differences: a second package (the alias); the
-# publish job asking npm again, so a re-run after a partial publish finishes
-# it; and provenance, which npm adds on its own here because this repo is
-# public.
+# either ports by diff. The differences: a second package (the alias), and
+# provenance, which npm adds on its own here because this repo is public.
 
 on:
   push:
@@ -159,13 +157,16 @@ jobs:
         # Before the alias, so an alias failure leaves the tag where the main
         # package was published; the next run publishes only the alias.
         # Keyed to check, not recheck: a re-run after the publish succeeded
-        # and the tag push failed still has this run's commit to tag.
+        # and the tag push failed still has this run's commit to tag. When
+        # recheck skipped the publish, PUBLISHED_NOW is false, so
+        # ensure-tag.sh tags this commit only if npm's gitHead says the
+        # version was published from it, not from some later commit.
         if: needs.check.outputs.publish == 'true'
         env:
           NAME: ${{ needs.check.outputs.name }}
           VERSION: ${{ needs.check.outputs.version }}
           SHA: ${{ needs.check.outputs.sha }}
-          PUBLISHED_NOW: "true"
+          PUBLISHED_NOW: ${{ steps.recheck.outputs.publish }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: .github/scripts/ensure-tag.sh
 
