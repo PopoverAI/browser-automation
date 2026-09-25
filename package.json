@@ -1,6 +1,6 @@
 {
 	"name": "@popoverai/browser-automation",
-	"version": "0.15.1",
+	"version": "0.15.2",
 	"description": "Narrated demo videos of your web app, recorded by your coding agent.",
 	"keywords": [
 		"demo",

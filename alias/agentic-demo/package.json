@@ -1,6 +1,6 @@
 {
 	"name": "agentic-demo",
-	"version": "0.15.1",
+	"version": "0.15.2",
 	"description": "Narrated demo videos of your web app, recorded by your coding agent. Short name for @popoverai/browser-automation.",
 	"keywords": [
 		"demo",
@@ -33,7 +33,7 @@
 		"node": ">=22"
 	},
 	"dependencies": {
-		"@popoverai/browser-automation": "^0.15.1"
+		"@popoverai/browser-automation": "^0.15.2"
 	},
 	"publishConfig": {
 		"access": "public"
