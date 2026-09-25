@@ -95,6 +95,28 @@ describe("steps file", () => {
 		).toBe(true);
 	});
 
+	it("takes an http(s) endpoint as the voice source, but not alongside a provider", () => {
+		const withSpeech = (speech: unknown) =>
+			StepsFileSchema.safeParse({
+				speech,
+				steps: [{ narrate: "x", commands: [["wait", "1"]] }],
+			});
+		expect(
+			withSpeech({ endpoint: "https://app.example.com/api/voice", voice: "v" })
+				.success,
+		).toBe(true);
+		expect(withSpeech({ endpoint: "not a url" }).success).toBe(false);
+		expect(withSpeech({ endpoint: "file:///etc/passwd" }).success).toBe(false);
+		const both = withSpeech({
+			provider: "openai",
+			endpoint: "https://app.example.com/api/voice",
+		});
+		expect(both.success).toBe(false);
+		expect(JSON.stringify(both.error?.issues)).toMatch(
+			/provider and an endpoint/,
+		);
+	});
+
 	it("rejects empty command arrays and empty steps", () => {
 		expect(
 			StepsFileSchema.safeParse({ steps: [{ narrate: "x", commands: [[]] }] })

@@ -22,6 +22,8 @@ export interface RenderResult {
 	videoPath: string;
 	/** Directory the mp4 (and any kept intermediates) live in. */
 	outputDir: string;
+	/** Length of the final video in seconds. */
+	durationSeconds: number;
 	timeline: TimelineEntry[];
 	/** Raw frame buffer — exposed primarily for testing/inspection. */
 	frames: CapturedFrame[];
@@ -315,6 +317,7 @@ export async function attachAgentBrowserDemoRecorder(
 			return {
 				videoPath: result.videoPath,
 				outputDir: result.outputDir,
+				durationSeconds: result.durationSeconds,
 				timeline: [...entries],
 				frames: [...frames],
 				segments: result.segments,

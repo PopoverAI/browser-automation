@@ -80,7 +80,7 @@ function makeDefaultExec(): {
 		// For encode/concat: pretend ffmpeg succeeded and create the output file
 		// (concat-list lookups depend on it existing).
 		const last = args[args.length - 1];
-		if (last && last.endsWith(".mp4")) {
+		if (last?.endsWith(".mp4")) {
 			writeFileSync(last, "fake mp4 data");
 		}
 		return { stdout: "", stderr: "", status: 0 };
@@ -231,11 +231,50 @@ describe("renderTimeline", () => {
 				!args.includes("libx264"),
 		);
 
-		// Per segment: probe the narration, encode video, probe the video, mux.
-		expect(probeCalls).toHaveLength(4);
+		// Per segment: probe the narration, encode video, probe the video, mux;
+		// then the final video is probed once for its length.
+		expect(probeCalls).toHaveLength(5);
+		expect(probeCalls.at(-1)?.[1][1]).toBe(join(outputDir, "final.mp4"));
 		expect(encodeCalls).toHaveLength(2);
 		expect(muxCalls).toHaveLength(2);
 		expect(concatCalls).toHaveLength(1);
+	});
+
+	it("reports the final video's length as ffmpeg reads it", async () => {
+		const { timeline, frames } = makeTimeline();
+		const { exec } = makeDefaultExec();
+
+		const result = await renderTimeline({
+			timeline,
+			frames,
+			outputDir,
+			speech,
+			exec,
+		});
+
+		expect(result.durationSeconds).toBe(2.5);
+	});
+
+	it("uses narration synthesised in advance instead of synthesising it again", async () => {
+		const { timeline, frames } = makeTimeline();
+		const { exec } = makeDefaultExec();
+
+		await renderTimeline({
+			timeline,
+			frames,
+			outputDir,
+			speech,
+			narration: [{ audio: new Uint8Array([1, 2, 3]), format: "wav" }],
+			exec,
+			keepIntermediates: true,
+		});
+
+		expect(doGenerate.mock.calls.map((c) => c[0].text)).toEqual([
+			"submitting the form",
+		]);
+		expect(readFileSync(join(outputDir, "audio-0.wav"))).toEqual(
+			Buffer.from([1, 2, 3]),
+		);
 	});
 
 	it("includes the even-dimension scale filter in encode commands", async () => {
