@@ -52,6 +52,20 @@ describe("assertSpeechCredentials", () => {
 		).not.toThrow();
 	});
 
+	it("accepts either the AI Gateway key or a Vercel OIDC token", () => {
+		expect(() => assertSpeechCredentials({ provider: "gateway" }, {})).toThrow(
+			/AI_GATEWAY_API_KEY \(or VERCEL_OIDC_TOKEN\) is not set/,
+		);
+		for (const env of [
+			{ AI_GATEWAY_API_KEY: "x" },
+			{ VERCEL_OIDC_TOKEN: "x" },
+		]) {
+			expect(() =>
+				assertSpeechCredentials({ provider: "gateway" }, env),
+			).not.toThrow();
+		}
+	});
+
 	it("does not guess for unknown providers", () => {
 		expect(() =>
 			assertSpeechCredentials({ provider: "acme" }, {}),
@@ -107,6 +121,34 @@ describe("loadSpeechModel", () => {
 		);
 		expect(speech).toHaveBeenNthCalledWith(1, "gpt-4o-mini-tts");
 		expect(speech).toHaveBeenNthCalledWith(2, "gpt-4o-mini-tts");
+	});
+
+	it("takes the gateway from `ai`, never from @ai-sdk/gateway", async () => {
+		const speechModel = vi.fn((id: string) => ({ modelId: id }));
+		const { importer, calls } = fakeImporter({
+			ai: { gateway: { speechModel }, generateSpeech: () => {} },
+		});
+		await loadSpeechModel({ provider: "gateway" }, { importer });
+		await loadSpeechModel(
+			{ provider: "gateway", model: "openai/tts-1" },
+			{ importer },
+		);
+		expect(calls).toEqual(["ai", "ai"]);
+		expect(speechModel).toHaveBeenNthCalledWith(1, "openai/tts-1-hd");
+		expect(speechModel).toHaveBeenNthCalledWith(2, "openai/tts-1");
+	});
+
+	it("loads the real gateway speech model from the installed `ai`", async () => {
+		// Guards the pnpm case: @ai-sdk/gateway is not importable from here,
+		// and this must not need it to be.
+		const model = await loadSpeechModel({
+			provider: "gateway",
+			model: "openai/tts-1",
+		});
+		expect(model).toMatchObject({
+			specificationVersion: "v4",
+			modelId: "openai/tts-1",
+		});
 	});
 
 	it("calls a single-model provider's factory with no id", async () => {

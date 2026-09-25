@@ -18,6 +18,8 @@ export interface SpeechSpec {
 interface KnownProvider {
 	/** Env var the provider package reads its API key from. */
 	apiKeyEnv: string;
+	/** Another env var the provider accepts in place of `apiKeyEnv`. */
+	altKeyEnv?: string;
 	/** Default model when the spec has none; `null` means the factory takes no id. */
 	defaultModel: string | null;
 	/** Example model ids for error messages. */
@@ -48,6 +50,14 @@ export const KNOWN_PROVIDERS: Record<string, KnownProvider> = {
 		apiKeyEnv: "DEEPGRAM_API_KEY",
 		defaultModel: "aura-2",
 		examples: ["aura", "aura-2"],
+	},
+	// Vercel AI Gateway: one key for many providers' models. Model ids are
+	// `<provider>/<model>`. On Vercel, the project's OIDC token also works.
+	gateway: {
+		apiKeyEnv: "AI_GATEWAY_API_KEY",
+		altKeyEnv: "VERCEL_OIDC_TOKEN",
+		defaultModel: "openai/tts-1-hd",
+		examples: ["openai/tts-1-hd", "openai/tts-1", "fish-audio/s2-pro"],
 	},
 };
 
@@ -102,9 +112,12 @@ export function assertSpeechCredentials(
 ): void {
 	const known = KNOWN_PROVIDERS[spec.provider];
 	if (!known) return;
-	if (!env[known.apiKeyEnv]) {
+	if (!env[known.apiKeyEnv] && !(known.altKeyEnv && env[known.altKeyEnv])) {
+		const vars = known.altKeyEnv
+			? `${known.apiKeyEnv} (or ${known.altKeyEnv})`
+			: known.apiKeyEnv;
 		throw new Error(
-			`${known.apiKeyEnv} is not set (needed for --tts ${spec.provider}). Set it, choose another provider with --tts or the steps file's "speech" block, or pass --silent.`,
+			`${vars} is not set (needed for --tts ${spec.provider}). Set it, choose another provider with --tts or the steps file's "speech" block, or pass --silent.`,
 		);
 	}
 }
@@ -163,7 +176,13 @@ export async function loadSpeechModel(
 	spec: SpeechSpec,
 	opts: { cwd?: string; importer?: ModuleImporter } = {},
 ): Promise<SpeechModel> {
-	const mod = await importProviderModule(spec.provider, opts);
+	// The gateway ships inside `ai`, which the CLI depends on. Its own package,
+	// @ai-sdk/gateway, is only `ai`'s dependency, so under pnpm it cannot be
+	// imported from here — take the instance `ai` re-exports instead.
+	const mod =
+		spec.provider === "gateway"
+			? await (opts.importer ?? ((s) => import(s)))("ai")
+			: await importProviderModule(spec.provider, opts);
 	const instance = findProviderInstance(mod, spec.provider);
 	if (!instance) {
 		throw new Error(

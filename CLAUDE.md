@@ -51,7 +51,9 @@ an observation rather than a problem.
 - `src/speech.ts` — narration through the AI SDK's `generateSpeech`, or a
   pure-JS silent WAV when no `speech` is configured
 - `src/speechProviders.ts` — CLI-side `--tts <provider[:model]>` resolution;
-  openai, elevenlabs, hume, deepgram are bundled
+  openai, elevenlabs, hume, deepgram are bundled, and so is the AI Gateway,
+  which comes from `ai` itself (`@ai-sdk/gateway` is not importable under
+  pnpm)
 - `src/timeline.ts` — `CapturedFrame` / `TimelineEntry` shared types
 - `SKILL.md` — the agent-facing guide, printed by `agentic-demo guide`;
   shipped in the package so it always matches the binary
