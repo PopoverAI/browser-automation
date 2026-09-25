@@ -1,0 +1,180 @@
+name: publish
+
+# Publishes @popoverai/browser-automation, then its short name agentic-demo,
+# from main. A version bump merged through a reviewed PR is what releases:
+# when main's version is not yet on npm, this runs the prepublishOnly gate,
+# publishes through npm trusted publishing (OIDC; no token stored anywhere),
+# and tags v<version> on the published commit. Because the trigger is "not
+# yet on npm" rather than "changed in this push", a publish that failed is
+# retried by the next push, or by a manual run of this workflow.
+#
+# Two jobs: `check` runs on every push and decides; only `publish` uses the
+# `npm` environment, which only main may use and which npm's trusted-publisher
+# settings require. So a copy of this workflow edited on a branch cannot
+# publish, and an ordinary push to main creates no deployment record.
+#
+# Ported from PopoverAI/convex-simple-authz; keep the two close so a fix in
+# either ports by diff. The differences: a second package (the alias), and
+# provenance, which npm adds on its own here because this repo is public.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "SHA to publish from (defaults to main HEAD)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # only to tag an already-published version (see ensure-tag.sh)
+    outputs:
+      sha: ${{ steps.on-main.outputs.sha }}
+      name: ${{ steps.check.outputs.name }}
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+      publish_alias: ${{ steps.check.outputs.publish_alias }}
+    steps:
+      - id: resolve-sha
+        name: Resolve target SHA
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
+          GITHUB_SHA_FALLBACK: ${{ github.sha }}
+        run: |
+          SHA="${INPUT_SHA:-$GITHUB_SHA_FALLBACK}"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Target SHA: $SHA"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.resolve-sha.outputs.sha }}
+          fetch-depth: 0   # all branches and tags: the main check below needs origin/main
+          persist-credentials: false   # the write token is passed only to the tag script
+
+      - id: on-main
+        name: Only a commit on main may be published
+        run: |
+          # A manual run can name any SHA or start from any branch; a release
+          # must be something that was reviewed and merged.
+          SHA=$(git rev-parse HEAD)
+          if ! git merge-base --is-ancestor "$SHA" origin/main; then
+            echo "::error::$SHA is not on main. Only a commit merged to main can be published."
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: The alias matches the release
+        run: .github/scripts/check-versions.sh
+
+      - id: check
+        name: Are these versions on npm yet?
+        run: |
+          # Prints true when NAME@VERSION still needs publishing. Only an
+          # E404 means "not published". Any other failure (network, a
+          # registry error) stops the run rather than being read as a
+          # version to publish.
+          needs_publish() {
+            local out
+            if out=$(npm view "$1@$2" version 2>npm-view.err); then
+              if [ "$out" != "$2" ]; then
+                echo "::error::npm view returned '$out' for $1@$2." >&2
+                return 1
+              fi
+              echo "::notice::$1@$2 is already on npm." >&2
+              echo false
+            elif grep -q "code E404" npm-view.err; then
+              echo "::notice::$1@$2 is not on npm yet — publishing." >&2
+              echo true
+            else
+              cat npm-view.err >&2
+              echo "::error::Could not tell whether $1@$2 is on npm." >&2
+              return 1
+            fi
+          }
+          NAME=$(jq -r .name package.json)
+          VERSION=$(jq -r .version package.json)
+          ALIAS=$(jq -r .name alias/agentic-demo/package.json)
+          PUBLISH=$(needs_publish "$NAME" "$VERSION")
+          PUBLISH_ALIAS=$(needs_publish "$ALIAS" "$VERSION")
+          {
+            echo "name=$NAME"
+            echo "version=$VERSION"
+            echo "publish=$PUBLISH"
+            echo "publish_alias=$PUBLISH_ALIAS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ensure the tag of an already-published version
+        if: steps.check.outputs.publish == 'false'
+        env:
+          NAME: ${{ steps.check.outputs.name }}
+          VERSION: ${{ steps.check.outputs.version }}
+          SHA: ${{ steps.on-main.outputs.sha }}
+          PUBLISHED_NOW: "false"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/ensure-tag.sh
+
+  publish:
+    needs: check
+    if: needs.check.outputs.publish == 'true' || needs.check.outputs.publish_alias == 'true'
+    runs-on: ubuntu-latest
+    environment: npm   # only main may use it; npm's trusted publisher requires it
+    permissions:
+      contents: write   # for the tag push
+      id-token: write   # for the OIDC token exchange with npm (trusted publishing)
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.check.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+        # No version: reads packageManager from package.json. Giving both
+        # fails with ERR_PNPM_BAD_PM_VERSION when they disagree.
+
+      - uses: actions/setup-node@v6
+        with:
+          # Node 24 ships npm 11.x; trusted publishing needs npm 11.5.1+.
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish @popoverai/browser-automation (trusted publishing)
+        if: needs.check.outputs.publish == 'true'
+        # `npm publish` runs prepublishOnly first: typecheck, tests, a clean
+        # build. Any failure stops the publish. Provenance needs no flag: npm
+        # attests trusted-publishing releases from a public repository itself.
+        run: npm publish --access public
+
+      - name: Tag the published commit
+        # Before the alias, so an alias failure leaves the tag where the main
+        # package was published; the next run publishes only the alias.
+        if: needs.check.outputs.publish == 'true'
+        env:
+          NAME: ${{ needs.check.outputs.name }}
+          VERSION: ${{ needs.check.outputs.version }}
+          SHA: ${{ needs.check.outputs.sha }}
+          PUBLISHED_NOW: "true"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/scripts/ensure-tag.sh
+
+      - name: Publish agentic-demo (trusted publishing)
+        # After the main package: the alias depends on the version just
+        # published. Its prepack copies the root README in.
+        if: needs.check.outputs.publish_alias == 'true'
+        working-directory: alias/agentic-demo
+        run: npm publish --access public

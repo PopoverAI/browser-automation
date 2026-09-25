@@ -136,46 +136,42 @@ guide` / `schema` are how a CLI-only agent learns the tool.
 
 ## Releases
 
-Publishing is manual, from a checkout of `main`, with npm's own tooling — the
-way every 0.13.x release was cut:
+Publishing happens in CI, never from a laptop, and only from `main`. Merging a
+PR that bumps the version to one not yet on npm makes
+`.github/workflows/publish.yml` run the `prepublishOnly` gate (typecheck,
+tests, a clean build), publish `@popoverai/browser-automation` and then the
+`agentic-demo` alias through npm trusted publishing, and tag `v<version>` on
+that commit. npm adds provenance to both, because the repo is public. The
+workflow is ported from `PopoverAI/convex-simple-authz`; keep the two close.
+
+To release, bump the version in the PR that should ship, and move the alias
+with it. Substitute the new version for `0.16.0`:
 
 ```bash
-npm version <patch|minor>   # bumps package.json, commits "x.y.z", tags vx.y.z
-npm publish                 # prepublishOnly rebuilds; ships README.md, SKILL.md, dist
-git push --follow-tags
-```
-
-The `agentic-demo` alias is published separately, **after** the main package,
-because it depends on the version being released. Substitute the version just
-published for `0.15.0` in both places:
-
-```bash
+npm version <patch|minor> --no-git-tag-version   # CI tags on publish
 cd alias/agentic-demo
-npm pkg set dependencies.@popoverai/browser-automation="^0.15.0"
-npm version 0.15.0 --allow-same-version --no-git-tag-version
-npm publish
-cd ../.. && git commit -am "agentic-demo 0.15.0"   # the two edits above
+npm pkg set dependencies.@popoverai/browser-automation="^0.16.0"
+npm version 0.16.0 --no-git-tag-version
 ```
 
-Both flags are load-bearing, and so is the `npm pkg set` line:
+The alias lines are load-bearing: `npm version` bumps one package's own
+version and nothing else, and a 0.x minor is a breaking change, so `^0.15.0`
+excludes 0.16.0 — an alias left on the old range would make
+`npx agentic-demo` resolve the _old_ CLI. `.github/scripts/check-versions.sh`
+fails the PR (in `test.yml`) and the publish if the alias's version or range
+does not match. Nothing else about the alias changes between releases.
 
-- **The dependency range must be bumped by hand.** `npm version` bumps a
-  package's own version and nothing else, so without that first line the alias
-  stays pinned to the previous range. A 0.x minor is a breaking change, so
-  `^0.15.0` excludes 0.16.0 — publishing the alias without it leaves
-  `npx agentic-demo` resolving the _old_ CLI.
-- **`--allow-same-version`**, because the alias's committed version usually
-  already equals the one being released; plain `npm version 0.15.0` exits with
-  `Version not changed` before anything is published.
-- **`--no-git-tag-version`**, because the main package's `npm version` has
-  already created `v0.15.0` in this repo, and a second tag of that name fails
-  with `fatal: tag 'v0.15.0' already exists`.
-
-Nothing else about the alias changes between releases.
+If a publish fails, fix the cause: merging the fix to `main` retries it,
+because the trigger is "not yet on npm" rather than "changed in this push". If
+the main package published and the alias did not, the next run publishes only
+the alias. To publish or tag a specific commit already on `main`, start the
+workflow by hand with its SHA; only a commit on `main` can be published. The
+publish job uses the `npm` GitHub environment, which only `main` may use and
+which npm's trusted-publisher settings for both packages name.
 
 The package is 0.x, so **breaking changes bump the minor** (SemVer item 4;
 `^0.13.x` ranges exclude 0.14.0). 1.0.0 would declare the API stable, which it
-is not. Add a `CHANGELOG.md` entry under the new version in the same commit as
+is not. Add a `CHANGELOG.md` entry under the new version in the same PR as
 the bump — the changelog is the release note; there is no other.
 
 There is no `production` branch — `main` is the trunk — and no changesets: the
@@ -184,7 +180,10 @@ removed.
 
 ## CI
 
-- **`test.yml`** — typecheck, vitest, and lint on every PR.
+- **`test.yml`** — typecheck, vitest, lint, and the alias version check on
+  every PR.
+- **`publish.yml`** — publishes both packages from `main` when the version is
+  not yet on npm (see Releases).
 - **`pr-review.yml`** — the formal Claude review (below).
 - **`claude.yml`** — the `@claude` mention trigger, gated to repo collaborators.
 

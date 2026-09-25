@@ -2,8 +2,8 @@
 
 `@popoverai/browser-automation` — the `agentic-demo` CLI and library.
 
-Versions are cut by hand with `npm version` / `npm publish` (see
-CLAUDE.md → Releases). This package is 0.x: a minor bump is a breaking change.
+A merged version bump publishes itself from CI (see CLAUDE.md → Releases).
+This package is 0.x: a minor bump is a breaking change.
 
 ## 0.15.1 — 2026-09-23
 
