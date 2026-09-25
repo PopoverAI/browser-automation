@@ -102,16 +102,19 @@ Also optional: `openArgs` (extra arguments for `open`), `speech.endpoint` (a [vo
 
 ### Narration
 
-Four voice providers ship with the CLI. Each reads its key from its own environment variable:
+Five voice providers ship with the CLI. Each reads its key from its own environment variable:
 
-| Provider   | `--tts`                                                     | Key                  | Models                           |
-| ---------- | ----------------------------------------------------------- | -------------------- | -------------------------------- |
-| OpenAI     | `openai[:model]` (default `gpt-4o-mini-tts`, voice `alloy`) | `OPENAI_API_KEY`     | `gpt-4o-mini-tts`, `tts-1-hd`    |
-| ElevenLabs | `elevenlabs[:model]` (default `eleven_multilingual_v2`)     | `ELEVENLABS_API_KEY` | `eleven_v3`, `eleven_flash_v2_5` |
-| Hume       | `hume`                                                      | `HUME_API_KEY`       | (single model)                   |
-| Deepgram   | `deepgram[:model]` (default `aura-2`)                       | `DEEPGRAM_API_KEY`   | `aura`, `aura-2`                 |
+| Provider          | `--tts`                                                     | Key                                         | Models                                                   |
+| ----------------- | ----------------------------------------------------------- | ------------------------------------------- | -------------------------------------------------------- |
+| OpenAI            | `openai[:model]` (default `gpt-4o-mini-tts`, voice `alloy`) | `OPENAI_API_KEY`                            | `gpt-4o-mini-tts`, `tts-1-hd`                            |
+| ElevenLabs        | `elevenlabs[:model]` (default `eleven_multilingual_v2`)     | `ELEVENLABS_API_KEY`                        | `eleven_v3`, `eleven_flash_v2_5`                         |
+| Hume              | `hume`                                                      | `HUME_API_KEY`                              | (single model)                                           |
+| Deepgram          | `deepgram[:model]` (default `aura-2`)                       | `DEEPGRAM_API_KEY`                          | `aura`, `aura-2`                                         |
+| Vercel AI Gateway | `gateway[:model]` (default `openai/tts-1-hd`)               | `AI_GATEWAY_API_KEY` or `VERCEL_OIDC_TOKEN` | `openai/tts-1`, `fish-audio/s2-pro`, `spacexai/grok-tts` |
 
 Choose the provider and voice in the steps file's `speech` block, or for one run with `--tts` and `--voice`.
+
+The AI Gateway reaches several providers' voices with one key. Its model ids name the provider too, as in `--tts gateway:openai/tts-1`; the [AI Gateway model list](https://vercel.com/ai-gateway/models) has the current set. Without `--voice`, the model's own default voice speaks.
 
 With `--json`, the summary on stdout includes `durationSeconds`, the length of the final video, and each step's `renderedSeconds`.
 

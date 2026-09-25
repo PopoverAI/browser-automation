@@ -145,14 +145,17 @@ whatever is on screen.
 ## Narration
 
 The narration provider comes from the AI SDK. Bundled: `openai` (default,
-`gpt-4o-mini-tts`, voice `alloy`), `elevenlabs`, `hume`, `deepgram`.
+`gpt-4o-mini-tts`, voice `alloy`), `elevenlabs`, `hume`, `deepgram`, and
+`gateway` (Vercel AI Gateway, default `openai/tts-1-hd`).
 Keys are read from `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `HUME_API_KEY`,
-`DEEPGRAM_API_KEY`. The CLI checks the key before opening the
+`DEEPGRAM_API_KEY`, `AI_GATEWAY_API_KEY` (or `VERCEL_OIDC_TOKEN` for the
+gateway). The CLI checks the key before opening the
 browser and tells you which variable is missing.
 
 - Put `provider`, `model`, `voice`, `instructions` in the steps file's
   `speech` block — they're part of the demo.
 - `--tts elevenlabs:eleven_v3 --voice <id>` overrides for one run.
+- Gateway model ids name the provider: `--tts gateway:openai/tts-1`.
 - `--silent` renders without any key; segment lengths are estimated from the
   narration text, so timing matches a narrated render.
 - Any other AI SDK provider: `--tts acme:model` loads `@ai-sdk/acme` from the

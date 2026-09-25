@@ -36,7 +36,7 @@ const SpeechSchema = SpeechOverridesSchema.extend({
 		.min(1)
 		.optional()
 		.describe(
-			"AI SDK speech provider: openai (default), elevenlabs, hume, deepgram, or any @ai-sdk/<name> that is installed.",
+			"AI SDK speech provider: openai (default), elevenlabs, hume, deepgram, gateway (Vercel AI Gateway), or any @ai-sdk/<name> that is installed.",
 		),
 	endpoint: z
 		.url({ protocol: /^https?$/ })
@@ -49,7 +49,7 @@ const SpeechSchema = SpeechOverridesSchema.extend({
 		.min(1)
 		.optional()
 		.describe(
-			"Model id, e.g. gpt-4o-mini-tts or eleven_v3. With an endpoint, sent to it as-is.",
+			"Model id, e.g. gpt-4o-mini-tts, eleven_v3, or openai/tts-1-hd for the gateway. With an endpoint, sent to it as-is.",
 		),
 	outputFormat: z
 		.string()
