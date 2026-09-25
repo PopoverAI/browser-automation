@@ -5,6 +5,34 @@
 A merged version bump publishes itself from CI (see CLAUDE.md → Releases).
 This package is 0.x: a minor bump is a breaking change.
 
+## 0.15.2 — 2026-09-25
+
+Added
+
+- **A voice endpoint.** `--tts https://…`, or `"speech": { "endpoint":
+  "https://…" }` in the steps file, gets each narration line from an HTTP
+  endpoint instead of a voice provider, so the machine that records holds no
+  provider key. The endpoint is sent `AGENTIC_DEMO_TTS_TOKEN` as a bearer
+  token. When it refuses (any non-2xx), agentic-demo prints its message word
+  for word and stops. README → "Voice endpoint" documents the request and
+  response an endpoint must implement.
+- **The Vercel AI Gateway as a voice provider.** `--tts gateway` (default
+  `openai/tts-1-hd`) or `--tts gateway:<provider>/<model>` narrates with one
+  AI Gateway key. `AI_GATEWAY_API_KEY`, or `VERCEL_OIDC_TOKEN`, is checked
+  before the browser opens. It used to load only when npm happened to place
+  `@ai-sdk/gateway` where the CLI could find it, and failed under pnpm.
+- **The video's total length in `--json`**, as `durationSeconds`, read from
+  the final file.
+
+Changed
+
+- **Step 1 is narrated before the browser opens**, for every voice source, so
+  a refused key, token or quota stops the run before any recording. Its audio
+  is reused when the video is rendered, so a successful run makes no extra
+  request.
+- **Releases are published from CI**, through npm trusted publishing, and
+  both packages now carry npm provenance.
+
 ## 0.15.1 — 2026-09-23
 
 Changed
