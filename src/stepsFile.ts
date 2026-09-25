@@ -38,11 +38,19 @@ const SpeechSchema = SpeechOverridesSchema.extend({
 		.describe(
 			"AI SDK speech provider: openai (default), elevenlabs, hume, deepgram, or any @ai-sdk/<name> that is installed.",
 		),
+	endpoint: z
+		.url({ protocol: /^https?$/ })
+		.optional()
+		.describe(
+			"URL of an HTTP endpoint that returns each line's audio, used instead of a provider. Sent AGENTIC_DEMO_TTS_TOKEN as a bearer token.",
+		),
 	model: z
 		.string()
 		.min(1)
 		.optional()
-		.describe("Provider model id, e.g. gpt-4o-mini-tts or eleven_v3."),
+		.describe(
+			"Model id, e.g. gpt-4o-mini-tts or eleven_v3. With an endpoint, sent to it as-is.",
+		),
 	outputFormat: z
 		.string()
 		.optional()
@@ -51,6 +59,10 @@ const SpeechSchema = SpeechOverridesSchema.extend({
 		.record(z.string(), z.record(z.string(), z.unknown()))
 		.optional()
 		.describe("Provider-specific options, keyed by provider name."),
+}).refine((s) => !(s.provider && s.endpoint), {
+	path: ["endpoint"],
+	message:
+		"speech names both a provider and an endpoint — keep the one that should speak",
 });
 
 const StepSchema = z.strictObject({
@@ -98,7 +110,7 @@ export const StepsFileSchema = z
 			.optional()
 			.describe('Extra arguments for `open`, e.g. ["--headers", "{...}"].'),
 		speech: SpeechSchema.optional().describe(
-			"Narration provider and voice. Default: openai gpt-4o-mini-tts, voice alloy.",
+			"Narration provider (or endpoint) and voice. Default: openai gpt-4o-mini-tts, voice alloy.",
 		),
 		steps: z.array(StepSchema).min(1),
 	})

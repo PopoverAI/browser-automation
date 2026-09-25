@@ -21,6 +21,14 @@ export type SpeechOverrides = Pick<
 	"voice" | "instructions" | "speed" | "language"
 >;
 
+/** The speech options for one step: the run's, with the step's overrides on top. */
+export function stepSpeech(
+	speech: SpeechOptions | undefined,
+	overrides: SpeechOverrides | undefined,
+): SpeechOptions | undefined {
+	return speech && overrides ? { ...speech, ...overrides } : speech;
+}
+
 export interface SynthesizedAudio {
 	audio: Uint8Array;
 	/** Container/codec name as reported by the provider, e.g. "mp3", "wav". */
