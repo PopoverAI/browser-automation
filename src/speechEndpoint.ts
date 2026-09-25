@@ -111,10 +111,10 @@ export function createEndpointSpeechModel(
 			}
 
 			const contentType = res.headers.get("content-type") ?? "";
-			if (/^(application\/json|text\/)/i.test(contentType)) {
+			if (!/^audio\//i.test(contentType)) {
 				const said = (await res.text()).trim();
 				throw new SpeechEndpointError(
-					`the voice endpoint ${url} answered HTTP ${res.status} with ${contentType}, not audio:\n${said}`,
+					`the voice endpoint ${url} answered HTTP ${res.status} with ${contentType || "no Content-Type"}, not audio/*:\n${said}`,
 					res.status,
 					said,
 				);

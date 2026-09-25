@@ -133,13 +133,20 @@ describe("endpoint speech model", () => {
 		expect(err.message).toMatch(/Missing token$/);
 	});
 
-	it("refuses a success response that is not audio", async () => {
-		const fetch = respond(JSON.stringify({ ok: true }), {
-			headers: { "Content-Type": "application/json" },
+	it.each([
+		"application/json",
+		"application/problem+json",
+		"image/png",
+		"application/octet-stream",
+		null,
+	])("refuses a success response whose Content-Type is %s", async (type) => {
+		// A byte body gets no Content-Type unless one is given.
+		const fetch = respond(new Uint8Array([1]), {
+			headers: type ? { "Content-Type": type } : {},
 		});
 		await expect(
 			createEndpointSpeechModel({ url: URL, fetch }).doGenerate({ text: "hi" }),
-		).rejects.toThrow(/not audio/);
+		).rejects.toThrow(/not audio\/\*/);
 	});
 
 	it("names the endpoint when it cannot be reached", async () => {

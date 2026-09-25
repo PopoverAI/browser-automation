@@ -145,7 +145,7 @@ Accept: audio/*
 - `text` is always present. `outputFormat` is `"mp3"` unless the steps file sets another. Every other field is present only when the steps file (or `--voice`) sets it, and is passed through without checking, so your endpoint decides which to honour and which models and voices to allow.
 - `model` and `voice` come from the steps file only when its `speech` block names this same endpoint; a voice chosen for a provider is not sent. `--voice` is always sent. A step's own `speech` block overrides `voice`, `instructions`, `speed` and `language` for that line.
 
-**Success:** any `2xx` status with the audio bytes as the body and an `audio/*` `Content-Type` (`audio/mpeg`, `audio/wav`, …). The format is read from the bytes, so any format ffmpeg can decode works. A `2xx` answer whose `Content-Type` is JSON or text is treated as an error.
+**Success:** any `2xx` status with the audio bytes as the body and an `audio/*` `Content-Type` (`audio/mpeg`, `audio/wav`, …). The format is read from the bytes, so any format ffmpeg can decode works. A `2xx` answer without an `audio/*` `Content-Type` is treated as an error.
 
 **Refusal:** any non-`2xx` status. Put the message for the person in the body, as JSON or as plain text:
 
