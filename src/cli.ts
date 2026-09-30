@@ -15,7 +15,7 @@
  * The steps file is defined in ./stepsFile.ts; the guide lives in SKILL.md
  * at the package root so it ships with, and matches, this binary.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -150,6 +150,8 @@ async function main(file: string, opts: CliOptions): Promise<void> {
 			index: i,
 			instruction: e.instruction,
 			narrative: e.narrative,
+			/** Where this step begins in the final video. */
+			startSeconds: result.segments[i]?.startSeconds,
 			/** Wall-clock seconds the step took to run (capture window). */
 			captureSeconds: e.segmentDuration,
 			/** Seconds of narration audio before padding. */
@@ -159,8 +161,13 @@ async function main(file: string, opts: CliOptions): Promise<void> {
 			frameCount: e.frameCount,
 		})),
 	};
+	// Written on every run: a reader that has the video but not this run's
+	// stdout (an app linking to one step of the demo) learns where each step
+	// starts from the file beside it.
+	const summaryJson = `${JSON.stringify(summary, null, 2)}\n`;
+	writeFileSync(join(dirname(result.videoPath), "final.json"), summaryJson);
 	if (opts.json) {
-		process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+		process.stdout.write(summaryJson);
 	} else {
 		for (const s of summary.segments) {
 			log(
@@ -202,7 +209,10 @@ const recordOptions = (cmd: typeof program) =>
 			"cap the frame rate requested from the stream (default: uncapped)",
 		)
 		.option("--ffmpeg <path>", "ffmpeg binary (default: ffmpeg-static)")
-		.option("--json", "print the result summary as JSON on stdout");
+		.option(
+			"--json",
+			"print the result summary as JSON on stdout (it is always written to final.json)",
+		);
 
 function fail(err: unknown): void {
 	log(err instanceof Error ? err.message : String(err));

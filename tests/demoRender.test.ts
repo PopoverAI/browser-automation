@@ -6,7 +6,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { SpeechModel } from "ai";
 import { MockSpeechModelV4 } from "ai/test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -86,6 +86,53 @@ function jpeg(width: number, height: number): string {
 const PROBE_STDERR =
 	"ffmpeg version blah\n  Duration: 00:00:02.50, start: 0.000000, bitrate: 32 kb/s\n  Stream #0:0\n";
 
+/** Video packets the framecrc stub gives segment `i`: 3, 5, 7, … */
+const packetsIn = (i: number) => 3 + 2 * i;
+/** One frame at 25 fps, in the 1/12800 time base ffmpeg's mp4 muxer uses. */
+const FRAME_TICKS = 512;
+/**
+ * How far the stub's final video starts its first frame from zero: 538
+ * ticks, the 42 ms a real join adds for 24 kHz AAC priming.
+ */
+const FINAL_SHIFT_TICKS = 538;
+
+/**
+ * `ffmpeg … -f framecrc -` over a file's video stream, as real ffmpeg prints
+ * it: a `#tb` header, then one `stream, dts, pts, duration, size, crc` line
+ * per packet in decode order. Pts run out of order, as B-frames make them.
+ * `segment-<i>.mp4` has `packetsIn(i)` packets from zero; `final.mp4` has
+ * every segment's in the order its `segments.txt` lists them, shifted by
+ * `FINAL_SHIFT_TICKS`. Undefined for any other call.
+ */
+function framecrc(
+	args: ReadonlyArray<string>,
+	finalShift = FINAL_SHIFT_TICKS,
+): ExecResult | undefined {
+	if (!args.includes("framecrc")) return undefined;
+	const input = args[args.indexOf("-i") + 1];
+	const segments = input.endsWith("final.mp4")
+		? readFileSync(join(dirname(input), "segments.txt"), "utf8")
+				.split("\n")
+				.map((line) => Number(line.match(/segment-(\d+)\.mp4/)?.[1]))
+		: [Number(input.match(/segment-(\d+)\.mp4$/)?.[1])];
+	const shift = input.endsWith("final.mp4") ? finalShift : 0;
+	const lines = ["#software: Lavf60.3.100", "#tb 0: 1/12800"];
+	let first = shift;
+	for (const i of segments) {
+		const n = packetsIn(i);
+		// Decode order: frame 0, then each later pair with its second shown first.
+		const order = [0];
+		for (let k = 1; k < n; k += 2)
+			order.push(...(k + 1 < n ? [k + 1, k] : [k]));
+		for (const k of order) {
+			const pts = first + k * FRAME_TICKS;
+			lines.push(`0, ${pts - FRAME_TICKS}, ${pts}, ${FRAME_TICKS}, 13, 0x0`);
+		}
+		first += n * FRAME_TICKS;
+	}
+	return { stdout: `${lines.join("\n")}\n`, stderr: "", status: 0 };
+}
+
 /**
  * A reasonable default exec stub: probe calls (`-i path`, no output) return
  * stderr with a Duration line; encode/concat calls return status 0 and write
@@ -99,6 +146,8 @@ function makeDefaultExec(): {
 	const calls: Array<[string, ReadonlyArray<string>]> = [];
 	const fn = (bin: string, args: ReadonlyArray<string>): ExecResult => {
 		calls.push([bin, args]);
+		const listing = framecrc(args);
+		if (listing) return listing;
 		const isProbe = args.length === 2 && args[0] === "-i";
 		if (isProbe) {
 			return { stdout: "", stderr: PROBE_STDERR, status: 1 };
@@ -264,6 +313,15 @@ describe("renderTimeline", () => {
 		expect(encodeCalls).toHaveLength(2);
 		expect(muxCalls).toHaveLength(2);
 		expect(concatCalls).toHaveLength(1);
+		// Then the video packets of each segment and of the final are listed.
+		const listed = calls
+			.filter(([, args]) => args.includes("framecrc"))
+			.map(([, args]) => args[args.indexOf("-i") + 1]);
+		expect(listed).toEqual([
+			join(outputDir, "final.mp4"),
+			join(outputDir, "segment-0.mp4"),
+			join(outputDir, "segment-1.mp4"),
+		]);
 	});
 
 	it("reports the final video's length as ffmpeg reads it", async () => {
@@ -279,6 +337,61 @@ describe("renderTimeline", () => {
 		});
 
 		expect(result.durationSeconds).toBe(2.5);
+	});
+
+	it("reports where each segment starts in the final video, as its first frame there", async () => {
+		const { timeline, frames } = makeTimeline();
+		const { exec } = makeDefaultExec();
+
+		const result = await renderTimeline({
+			timeline,
+			frames,
+			outputDir,
+			speech,
+			exec,
+		});
+
+		// Segment 0 begins at the final's first frame, 538 ticks of 1/12800 s
+		// (0.04203 s); segment 1 after segment 0's 3 frames of 512 ticks
+		// (0.16203 s). Both rounded up to the millisecond. Adding up the
+		// segments' 2.5 s probed lengths would say 0 and 2.5.
+		expect(result.segments.map((s) => s.startSeconds)).toEqual([0.043, 0.163]);
+	});
+
+	it("leaves a start that falls on a whole millisecond as it is", async () => {
+		const { timeline, frames } = makeTimeline();
+		const exec: ExecRunner = (bin, args) =>
+			framecrc(args, 0) ?? makeDefaultExec().exec(bin, args);
+
+		const result = await renderTimeline({
+			timeline,
+			frames,
+			outputDir,
+			speech,
+			exec,
+		});
+
+		// 3 × 512 ticks of 1/12800 s is 0.12 s exactly.
+		expect(result.segments.map((s) => s.startSeconds)).toEqual([0, 0.12]);
+	});
+
+	it("throws when the final video's packets do not add up to its segments'", async () => {
+		const { timeline, frames } = makeTimeline();
+		const exec: ExecRunner = (bin, args) => {
+			const listing = framecrc(args);
+			if (listing && args.some((a) => a.endsWith("final.mp4"))) {
+				// Drop the last packet, as if the join had lost a frame.
+				const lines = listing.stdout.trimEnd().split("\n");
+				return { ...listing, stdout: `${lines.slice(0, -1).join("\n")}\n` };
+			}
+			return makeDefaultExec().exec(bin, args);
+		};
+
+		await expect(
+			renderTimeline({ timeline, frames, outputDir, speech, exec }),
+		).rejects.toThrow(
+			/final video has 7 video packets but its segments have 8/,
+		);
 	});
 
 	it("uses narration synthesised in advance instead of synthesising it again", async () => {
@@ -685,6 +798,8 @@ describe("renderTimeline segment length = max(video, audio)", () => {
 
 	function execWithAudio(stderr: string): ExecRunner {
 		return (_bin, args) => {
+			const listing = framecrc(args);
+			if (listing) return listing;
 			if (args.length === 2 && args[0] === "-i") {
 				return { stdout: "", stderr, status: 1 };
 			}
@@ -781,6 +896,8 @@ describe("renderTimeline frame encodings", () => {
 		const seen: string[][] = [];
 		const exec: ExecRunner = (_bin, args) => {
 			seen.push([...args]);
+			const listing = framecrc(args);
+			if (listing) return listing;
 			// Probe (`-i audio`, no output): return a duration line.
 			if (args.length === 2 && args[0] === "-i") {
 				return { stdout: "", stderr: PROBE_STDERR, status: 1 };

@@ -81,7 +81,17 @@ export interface RenderedSegment {
 	renderedSeconds: number;
 	/** Length of the narration audio before padding, in seconds. */
 	narrationSeconds: number;
+	/**
+	 * Where this segment begins in the final video, in seconds: the time of
+	 * its first frame there, rounded up to the millisecond so that seeking to
+	 * it shows that frame rather than the previous segment's last one.
+	 * Measured from the final file; see `segmentStarts`.
+	 */
+	startSeconds: number;
 }
+
+/** A segment as `renderSegment` leaves it, before the join places it in the final video. */
+type EncodedSegment = Omit<RenderedSegment, "startSeconds">;
 
 export interface RenderTimelineResult {
 	videoPath: string;
@@ -107,7 +117,12 @@ const MAX_FRAME_DURATION = 10;
 const LAST_FRAME_TAIL = 0.25;
 
 const defaultExec: ExecRunner = (bin, args) => {
-	const r = spawnSync(bin, [...args], { encoding: "utf8" });
+	// The buffer is sized for `videoPackets`, which prints a line (~60 bytes)
+	// per frame: spawnSync's 1 MB default would stop at about ten minutes.
+	const r = spawnSync(bin, [...args], {
+		encoding: "utf8",
+		maxBuffer: 256 * 1024 * 1024,
+	});
 	if (r.error) throw r.error;
 	return {
 		stdout: r.stdout ?? "",
@@ -144,7 +159,7 @@ export async function renderTimeline(
 
 	const exec: ExecRunner = options.exec ?? defaultExec;
 
-	const partial: { segments: RenderedSegment[] } = { segments: [] };
+	const partial: { segments: EncodedSegment[] } = { segments: [] };
 
 	try {
 		// Every segment is encoded at one frame size, so the stream-copy concat
@@ -155,7 +170,7 @@ export async function renderTimeline(
 		const canvas = videoCanvas(segmentFrames.flat());
 
 		// Phase 1: parallel TTS + per-segment encoding.
-		const segments = await Promise.all(
+		const encoded = await Promise.all(
 			options.timeline.map((entry, i) =>
 				renderSegment({
 					entry,
@@ -172,7 +187,7 @@ export async function renderTimeline(
 			),
 		);
 
-		partial.segments = segments;
+		partial.segments = encoded;
 
 		// Phase 2: concat — stream copy, no re-encode.
 		//
@@ -185,7 +200,7 @@ export async function renderTimeline(
 		const segmentListPath = join(outputDir, "segments.txt");
 		writeFileSync(
 			segmentListPath,
-			segments
+			encoded
 				.map((s) => `file '${escapeConcatPath(s.segmentVideoPath ?? "")}'`)
 				.join("\n"),
 		);
@@ -204,6 +219,16 @@ export async function renderTimeline(
 			finalPath,
 		]);
 		const durationSeconds = probeDurationSeconds(exec, ffmpeg, finalPath);
+		const starts = segmentStarts(
+			exec,
+			ffmpeg,
+			encoded.map((s) => s.segmentVideoPath ?? ""),
+			finalPath,
+		);
+		const segments: RenderedSegment[] = encoded.map((s, i) => ({
+			...s,
+			startSeconds: starts[i],
+		}));
 
 		if (!options.keepIntermediates) {
 			cleanupIntermediates(outputDir, segments);
@@ -356,7 +381,7 @@ interface SegmentInput {
 	exec: ExecRunner;
 }
 
-async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
+async function renderSegment(input: SegmentInput): Promise<EncodedSegment> {
 	const {
 		entry,
 		index,
@@ -540,6 +565,92 @@ function probeDurationSeconds(
 		);
 	}
 	return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+}
+
+/**
+ * Where each segment begins in the final video, in seconds, rounded up to the
+ * millisecond.
+ *
+ * Measured from the final file, because the join does not lay the segments
+ * end to end at zero. Each segment's AAC narration opens with encoder priming
+ * stamped before zero, and the mp4 muxer shifts the whole joined file later
+ * to keep its timestamps non-negative: with 24 kHz narration every segment's
+ * first frame lands 42 ms after the lengths of the segments before it add up
+ * to, and the final video is 42 ms longer than their sum. Seeking to the sum
+ * would show the previous step's last frame.
+ *
+ * The final video stream is a packet-for-packet copy of the segments' video
+ * streams, in order. So segment i owns the final's packets that follow the
+ * ones the segments before it contributed, and it begins at the earliest
+ * presentation time among them.
+ */
+function segmentStarts(
+	exec: ExecRunner,
+	ffmpeg: string,
+	segmentPaths: ReadonlyArray<string>,
+	finalPath: string,
+): number[] {
+	const final = videoPackets(exec, ffmpeg, finalPath);
+	const counts = segmentPaths.map((p) => videoPackets(exec, ffmpeg, p).length);
+	const total = counts.reduce((a, b) => a + b, 0);
+	if (total !== final.length) {
+		throw new Error(
+			`renderTimeline: the final video has ${final.length} video packets but its segments have ${total}, so where each segment starts cannot be measured.`,
+		);
+	}
+	const starts: number[] = [];
+	let first = 0;
+	for (const count of counts) {
+		// A loop, not Math.min(...slice): spreading a long step's packets
+		// would pass the engine's argument limit.
+		let pts = Number.POSITIVE_INFINITY;
+		for (let i = first; i < first + count; i++) pts = Math.min(pts, final[i]);
+		// Up to the next millisecond; the epsilon keeps an exact millisecond
+		// from rounding past itself through floating-point error, and max()
+		// turns the -0 that rounding a zero start gives into 0.
+		starts.push(Math.max(0, Math.ceil(pts * 1000 - 1e-6) / 1000));
+		first += count;
+	}
+	return starts;
+}
+
+/**
+ * Presentation times (s) of a file's video packets, in decode order. Lists
+ * the packets with the `framecrc` muxer over a stream copy, so nothing is
+ * decoded: one line per packet, `stream, dts, pts, duration, size, crc`, in
+ * the time base its `#tb` header gives.
+ */
+function videoPackets(
+	exec: ExecRunner,
+	ffmpeg: string,
+	file: string,
+): number[] {
+	const r = runChecked(exec, ffmpeg, [
+		"-v",
+		"error",
+		"-i",
+		file,
+		"-map",
+		"0:v:0",
+		"-c",
+		"copy",
+		"-f",
+		"framecrc",
+		"-",
+	]);
+	const tb = r.stdout.match(/^#tb 0: (\d+)\/(\d+)\s*$/m);
+	if (!tb) {
+		throw new Error(
+			`renderTimeline: could not list the video packets of ${file}: no time base in ffmpeg's framecrc output. stdout was: ${r.stdout.slice(0, 500)}`,
+		);
+	}
+	const seconds = Number(tb[1]) / Number(tb[2]);
+	const pts: number[] = [];
+	for (const line of r.stdout.split("\n")) {
+		if (line.startsWith("#") || line.trim() === "") continue;
+		pts.push(Number(line.split(",")[2]) * seconds);
+	}
+	return pts;
 }
 
 function runChecked(

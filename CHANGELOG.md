@@ -5,6 +5,25 @@
 A merged version bump publishes itself from CI (see CLAUDE.md → Releases).
 This package is 0.x: a minor bump is a breaking change.
 
+## 0.15.4 — 2026-09-30
+
+Added
+
+- **`final.json`: where each step begins in the video.** Every recording now
+  writes `final.json` beside `final.mp4`, narrated or `--silent`, with or
+  without `--json`. It holds the summary `--json` prints, and each step in it
+  now has `startSeconds`, the time of its first frame in `final.mp4`, so an
+  app can link to one step of a demo and open the video there. The start is
+  measured from the finished file, not added up from the steps' lengths:
+  each step's narration begins with a few hundredths of a second of AAC
+  encoder priming stamped before zero, and the join shifts the whole video
+  later to keep its timestamps non-negative. With 24 kHz narration (OpenAI,
+  `--silent`) every step starts 42 ms after the sum of the `renderedSeconds`
+  before it, and the video is 42 ms longer than that sum; with 44.1 kHz
+  (ElevenLabs), 23 ms. A player seeking to the sum shows the previous step's
+  last frame. `startSeconds` is rounded up to the millisecond, so seeking to
+  it shows the step's own first frame.
+
 ## 0.15.3 — 2026-09-29
 
 Fixed

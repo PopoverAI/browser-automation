@@ -79,6 +79,21 @@ function videoSizes(bin: string, file: string): string[] {
 	return [...stderr.matchAll(/Video: .*?, (\d+x\d+)/g)].map((m) => m[1]);
 }
 
+/**
+ * Every decoded frame of a file's video: its presentation time (s) and mean
+ * luma, from the showinfo filter.
+ */
+function decodedFrames(bin: string, file: string): { t: number; y: number }[] {
+	const stderr = execFileSync("sh", [
+		"-c",
+		`"${bin}" -i "${file}" -map 0:v -vf showinfo -f null - 2>&1`,
+	]).toString();
+	return [...stderr.matchAll(/pts_time:([\d.]+).*?mean:\[(\d+)/g)].map((m) => ({
+		t: Number(m[1]),
+		y: Number(m[2]),
+	}));
+}
+
 describe.skipIf(!ffmpeg)("renderTimeline with a real ffmpeg", () => {
 	const outputDir = mkdtempSync(join(tmpdir(), "demo-render-real-"));
 	afterAll(() => rmSync(outputDir, { recursive: true, force: true }));
@@ -223,5 +238,65 @@ describe.skipIf(!ffmpeg)("renderTimeline with a real ffmpeg", () => {
 		const a = streamSeconds(bin, seg.segmentVideoPath!, "0:a");
 		expect(Math.abs(v - seg.renderedSeconds)).toBeLessThan(0.15);
 		expect(Math.abs(a - v)).toBeLessThan(0.15);
+	});
+	it("reports each segment's start where a player shows its first frame", async () => {
+		const bin = ffmpeg!;
+		// Four steps, each a different grey, with different frame spacing and
+		// narration lengths, so the segments differ in length.
+		const greys = [0x20, 0x60, 0xa0, 0xe0];
+		const frames: CapturedFrame[] = [];
+		const timeline: TimelineEntry[] = greys.map((g, i) => {
+			const hex = g.toString(16).repeat(3);
+			const start = 1000 + i * 5000;
+			for (let j = 0; j <= i % 3; j++) {
+				frames.push(solidFrame(`0x${hex}`, "64x48", start + j * (60 + 30 * i)));
+			}
+			return {
+				instruction: `step ${i}`,
+				narrative: "n",
+				startTime: start,
+				endTime: start + 400,
+				frameCount: 1 + (i % 3),
+				segmentDuration: 0.4,
+			};
+		});
+		const narration = [1.3, 2.1, 0.9, 1.7].map((s) => ({
+			audio: silentWav(s),
+			format: "wav",
+		}));
+
+		const r = await renderTimeline({
+			timeline,
+			frames,
+			narration,
+			outputDir: join(outputDir, "starts"),
+			ffmpegPath: bin,
+		});
+
+		// Which step a decoded frame belongs to, by its grey (limited-range luma).
+		const stepOf = (y: number) => {
+			const distance = greys.map((g) => Math.abs(16 + (g * 219) / 255 - y));
+			return distance.indexOf(Math.min(...distance));
+		};
+		const decoded = decodedFrames(bin, r.videoPath);
+		// What a player shows at time t: the last frame presented by then.
+		const shownAt = (t: number) =>
+			stepOf(decoded.filter((f) => f.t <= t).at(-1)?.y ?? Number.NaN);
+
+		r.segments.forEach((s, i) => {
+			expect(shownAt(s.startSeconds), `step ${i}`).toBe(i);
+			if (i > 0)
+				expect(shownAt(s.startSeconds - 0.005), `before step ${i}`).toBe(i - 1);
+		});
+		// The join starts every segment later than the lengths before it add
+		// up to (AAC priming), and the last one runs to the end of the file.
+		expect(r.segments[1].startSeconds).toBeGreaterThan(
+			r.segments[0].renderedSeconds,
+		);
+		const last = r.segments.at(-1)!;
+		expect(last.startSeconds + last.renderedSeconds).toBeCloseTo(
+			r.durationSeconds,
+			1,
+		);
 	});
 });
