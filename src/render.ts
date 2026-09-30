@@ -601,7 +601,10 @@ function segmentStarts(
 	const starts: number[] = [];
 	let first = 0;
 	for (const count of counts) {
-		const pts = Math.min(...final.slice(first, first + count));
+		// A loop, not Math.min(...slice): spreading a long step's packets
+		// would pass the engine's argument limit.
+		let pts = Number.POSITIVE_INFINITY;
+		for (let i = first; i < first + count; i++) pts = Math.min(pts, final[i]);
 		// Up to the next millisecond; the epsilon keeps an exact millisecond
 		// from rounding past itself through floating-point error, and max()
 		// turns the -0 that rounding a zero start gives into 0.
