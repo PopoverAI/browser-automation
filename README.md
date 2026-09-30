@@ -75,9 +75,36 @@ For the step-by-step workflow, run `agentic-demo guide`.
 | `--trailing-delay <ms>`    | Default `trailingDelay` for every step (default: 1000)           |
 | `--max-fps <n>`            | Cap the capture frame rate (default: uncapped)                   |
 | `--ffmpeg <path>`          | ffmpeg binary (default: ffmpeg-static's, or `FFMPEG_BIN`)        |
-| `--json`                   | Print a per-step summary as JSON on stdout                       |
+| `--json`                   | Print the summary in `final.json` on stdout as well              |
 
 Without `--json`, stdout is the path to `final.mp4` and progress goes to stderr.
+
+### Output
+
+A recording writes `final.mp4` and, beside it, `final.json`: the video's length, and for each step where it begins in the video and how long it took. Every run writes it, narrated or `--silent`; `--json` prints the same summary.
+
+```jsonc
+{
+  "videoPath": "/home/me/demo/final.mp4",
+  "outputDir": "/home/me/demo",
+  "durationSeconds": 16.16, // Length of final.mp4
+  "segments": [
+    // One per step, in the steps file's order
+    {
+      "index": 1, // The step's position in the steps file, from 0
+      "instruction": "click #red", // The step's commands
+      "narrative": "Turn the page red.", // The step's narration
+      "startSeconds": 2.323, // Where the step begins in final.mp4
+      "captureSeconds": 1.01, // How long its commands took to run
+      "narrationSeconds": 1.6, // Length of its narration
+      "renderedSeconds": 1.88, // Its length in final.mp4
+      "frameCount": 2, // Frames captured; 1 means the step changed nothing on screen
+    },
+  ],
+}
+```
+
+`startSeconds` is the time of the step's first frame in `final.mp4`, rounded up to the millisecond, so a player that seeks there shows that step rather than the end of the one before. Use it to open the video at a step. Don't add up `renderedSeconds` instead: joining the steps starts each one a few hundredths of a second later than that sum.
 
 ### Steps File
 
@@ -119,8 +146,6 @@ Five voice providers ship with the CLI. Each reads its key from its own environm
 Choose the provider and voice in the steps file's `speech` block, or for one run with `--tts` and `--voice`.
 
 The AI Gateway reaches several providers' voices with one key. Its model ids name the provider too, as in `--tts gateway:openai/tts-1`; the [AI Gateway model list](https://vercel.com/ai-gateway/models) has the current set. Without `--voice`, the model's own default voice speaks.
-
-With `--json`, the summary on stdout includes `durationSeconds`, the length of the final video, and each step's `renderedSeconds`.
 
 ### Voice endpoint
 

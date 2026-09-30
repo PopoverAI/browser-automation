@@ -53,13 +53,17 @@ agentic-demo record FILE      # record (also: agentic-demo FILE)
    ```bash
    OPENAI_API_KEY=… agentic-demo record steps.json --out ./demo
    ```
-5. Report the path printed on stdout. `--json` adds the video's total length
-   (`durationSeconds`) and a per-step summary:
-   `captureSeconds` (how long the commands took), `narrationSeconds` (the
-   speech), `renderedSeconds` (the segment's length in the video — the larger
-   of the two, plus a short tail), and `frameCount`; a step with
-   `frameCount: 1` most likely changed nothing on screen, and shows one
-   still picture of the page.
+5. Report the path printed on stdout. Beside the video, `final.json` holds a
+   summary (`--json` also prints it): the video's total length
+   (`durationSeconds`) and, per step, `startSeconds` (where the step begins
+   in the video — use it to point someone at a step), `captureSeconds` (how
+   long the commands took), `narrationSeconds` (the speech),
+   `renderedSeconds` (the step's length in the video — the larger of the
+   two, plus a short tail), and `frameCount`; a step with `frameCount: 1`
+   most likely changed nothing on screen, and shows one still picture of the
+   page. Take a step's start from `startSeconds`, not by adding up
+   `renderedSeconds`: joining the steps starts each one slightly later than
+   that sum.
 
 ## Steps file
 
@@ -210,7 +214,7 @@ Or hand agent-browser a CDP URL you provisioned yourself:
   stream (its dashboard, another recording), close it: the check needs to be
   the only viewer. Then run it again. If it stops at the same step again,
   record the steps from that one on as their own video.
-- **A segment that is one still picture** (`frameCount: 1` in `--json`) —
+- **A segment that is one still picture** (`frameCount: 1` in `final.json`) —
   the step changed nothing on screen. Usually the narration belongs on the
   previous or next step.
 
