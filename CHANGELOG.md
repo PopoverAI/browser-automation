@@ -5,6 +5,33 @@
 A merged version bump publishes itself from CI (see CLAUDE.md → Releases).
 This package is 0.x: a minor bump is a breaking change.
 
+## 0.15.3 — 2026-09-29
+
+Fixed
+
+- **A video that changes viewport size plays to the end.** After a
+  `set viewport` partway through a recording, the phone steps were captured,
+  but each segment was encoded at its own frame size and the segments were
+  joined without re-encoding. QuickTime, Safari and anything else built on
+  AVFoundation stop decoding at the size change, so they showed the last
+  desktop frame, frozen, over the rest of the narration. Every segment is now
+  encoded at one size, the widest and tallest frame the recording reached,
+  and a smaller view is fitted inside it, centred on black.
+- **A recording whose picture stops no longer finishes as a frozen video.**
+  agent-browser's stream sends a frame only when the page repaints, so a
+  step that changed nothing on screen brings no frames, and the renderer held
+  the previous one. A stream that had stopped, before a step or partway
+  through it, looked the same, and the video froze with no error. Now every
+  step ends by reconnecting to the stream. agent-browser restarts its capture
+  for a client that arrives when no one else is watching, and Chrome sends a
+  frame of the page as it is, about 35 ms per step in all. For a step that
+  changed nothing, that frame is its picture, so it now reports
+  `frameCount: 1` in `--json`, not 0; for any other step it only proves the
+  stream live, and the video is as before. If none arrives, the recording
+  fails with `step N (…): agent-browser's stream has stopped sending frames`.
+  Something else watching the stream, such as agent-browser's dashboard,
+  keeps the capture from restarting and fails the check the same way.
+
 ## 0.15.2 — 2026-09-25
 
 Added

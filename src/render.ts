@@ -147,13 +147,21 @@ export async function renderTimeline(
 	const partial: { segments: RenderedSegment[] } = { segments: [] };
 
 	try {
+		// Every segment is encoded at one frame size, so the stream-copy concat
+		// below joins like with like. See `videoCanvas`.
+		const segmentFrames = options.timeline.map((entry, i) =>
+			selectSegmentFrames(entry, i, options.frames),
+		);
+		const canvas = videoCanvas(segmentFrames.flat());
+
 		// Phase 1: parallel TTS + per-segment encoding.
 		const segments = await Promise.all(
 			options.timeline.map((entry, i) =>
 				renderSegment({
 					entry,
 					index: i,
-					frames: options.frames,
+					segmentFrames: segmentFrames[i],
+					canvas,
 					outputDir,
 					speech: options.speech,
 					narration: options.narration?.[i],
@@ -219,10 +227,127 @@ export async function renderTimeline(
 	}
 }
 
+/**
+ * The frames shown for one timeline entry: those stamped inside its
+ * [startTime, endTime] window.
+ *
+ * An entry with none holds the most recent frame captured before it, so its
+ * narration plays over the page as it last looked. The agent-browser
+ * recorder never produces such an entry — for a step that brought no frames
+ * it checks the stream is still live and fails the recording if it is not —
+ * so this serves callers that build their own timeline.
+ */
+function selectSegmentFrames(
+	entry: TimelineEntry,
+	index: number,
+	frames: CapturedFrame[],
+): CapturedFrame[] {
+	const inWindow = frames.filter(
+		(f) => f.timestamp >= entry.startTime && f.timestamp <= entry.endTime,
+	);
+	if (inWindow.length > 0) return inWindow;
+	const prior = frames.filter((f) => f.timestamp < entry.startTime);
+	if (prior.length > 0) return [prior[prior.length - 1]];
+	// No frames anywhere before this entry: we can't fabricate pixels.
+	throw new Error(
+		`renderTimeline: no frames available for segment ${index} (${entry.instruction}). Buffer is empty before endTime ${entry.endTime}.`,
+	);
+}
+
+/** Width × height, in pixels. */
+interface Size {
+	width: number;
+	height: number;
+}
+
+/**
+ * The one frame size every segment is encoded at: the widest and the tallest
+ * frame shown, rounded up to even numbers for yuv420p.
+ *
+ * Frames change size when the viewport does (`set viewport` mid-recording, a
+ * desktop flow followed by a phone one). Segments encoded at their own frames'
+ * sizes then differ, and the final concat copies them into one stream without
+ * re-encoding. QuickTime, Safari and anything else built on AVFoundation
+ * cannot decode past the size change, so the player holds the last frame
+ * before it for the rest of the video. Frames smaller than the canvas are
+ * scaled to fit and centred on black.
+ *
+ * Undefined when no frame's size can be read (image data this module does not
+ * recognise); each frame is then encoded at its own size.
+ */
+function videoCanvas(frames: CapturedFrame[]): Size | undefined {
+	let width = 0;
+	let height = 0;
+	for (const f of frames) {
+		const size = imageSize(Buffer.from(f.data, "base64"));
+		if (!size) continue;
+		width = Math.max(width, size.width);
+		height = Math.max(height, size.height);
+	}
+	if (width === 0 || height === 0) return undefined;
+	return { width: width + (width % 2), height: height + (height % 2) };
+}
+
+/** Pixel size of a PNG or JPEG, read from its header; undefined for anything else. */
+function imageSize(buf: Buffer): Size | undefined {
+	// PNG: an 8-byte signature, then the IHDR chunk's width and height.
+	if (
+		buf.length >= 24 &&
+		buf.readUInt32BE(0) === 0x89504e47 &&
+		buf.toString("latin1", 12, 16) === "IHDR"
+	) {
+		return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+	}
+	// JPEG: walk the marker segments to the first start-of-frame.
+	if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return undefined;
+	let i = 2;
+	while (i + 3 < buf.length) {
+		if (buf[i] !== 0xff) return undefined;
+		const marker = buf[i + 1];
+		if (marker === 0xff) {
+			i++; // fill byte
+			continue;
+		}
+		// SOF0–SOF15, except DHT (C4), JPG (C8) and DAC (CC).
+		const isStartOfFrame =
+			marker >= 0xc0 &&
+			marker <= 0xcf &&
+			marker !== 0xc4 &&
+			marker !== 0xc8 &&
+			marker !== 0xcc;
+		if (isStartOfFrame) {
+			if (i + 8 >= buf.length) return undefined;
+			return {
+				width: buf.readUInt16BE(i + 7),
+				height: buf.readUInt16BE(i + 5),
+			};
+		}
+		// Markers that carry no length field.
+		if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd8)) {
+			i += 2;
+			continue;
+		}
+		i += 2 + buf.readUInt16BE(i + 2);
+	}
+	return undefined;
+}
+
+/** The ffmpeg video filter that puts a frame of any size onto the canvas. */
+function canvasFilter(canvas: Size | undefined): string {
+	if (!canvas) return "scale=trunc(iw/2)*2:trunc(ih/2)*2";
+	const { width: w, height: h } = canvas;
+	return [
+		`scale=${w}:${h}:force_original_aspect_ratio=decrease:force_divisible_by=2`,
+		`pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black`,
+		"setsar=1",
+	].join(",");
+}
+
 interface SegmentInput {
 	entry: TimelineEntry;
 	index: number;
-	frames: CapturedFrame[];
+	segmentFrames: CapturedFrame[];
+	canvas: Size | undefined;
 	outputDir: string;
 	speech?: SpeechOptions;
 	narration?: SynthesizedAudio;
@@ -235,7 +360,8 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
 	const {
 		entry,
 		index,
-		frames,
+		segmentFrames,
+		canvas,
 		outputDir,
 		speech,
 		narration: premade,
@@ -243,30 +369,6 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
 		ffmpeg,
 		exec,
 	} = input;
-
-	// Filter frames to the entry's [startTime, endTime] window.
-	let segmentFrames = frames.filter(
-		(f) => f.timestamp >= entry.startTime && f.timestamp <= entry.endTime,
-	);
-
-	// Fallback: if the action caused no visible change, CDP emits no frames in
-	// the segment's window. Hold the most recent frame captured before this
-	// segment started — narration plays over a freeze of the current page state.
-	if (segmentFrames.length === 0) {
-		const prior = frames.filter((f) => f.timestamp < entry.startTime);
-		if (prior.length > 0) {
-			segmentFrames = [prior[prior.length - 1]];
-		}
-	}
-
-	// Last resort: if there are no frames anywhere in the buffer, we can't
-	// fabricate pixels — fail loudly so the caller knows the screencast never
-	// produced anything.
-	if (segmentFrames.length === 0) {
-		throw new Error(
-			`renderTimeline: no frames available for segment ${index} (${entry.instruction}). Buffer is empty before endTime ${entry.endTime}.`,
-		);
-	}
 
 	// 1. Narrate (speech model, or silence sized to the text).
 	const narration =
@@ -367,7 +469,7 @@ async function renderSegment(input: SegmentInput): Promise<RenderedSegment> {
 		"-i",
 		concatFilePath,
 		"-vf",
-		"scale=trunc(iw/2)*2:trunc(ih/2)*2",
+		canvasFilter(canvas),
 		"-c:v",
 		"libx264",
 		"-pix_fmt",

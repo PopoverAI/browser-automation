@@ -68,9 +68,91 @@ function streamSeconds(bin: string, file: string, map: "0:v" | "0:a"): number {
 	return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : NaN;
 }
 
+/** Every "Video: …, WxH" size ffmpeg reports for a file. */
+function videoSizes(bin: string, file: string): string[] {
+	let stderr = "";
+	try {
+		execFileSync(bin, ["-i", file], { stdio: ["ignore", "ignore", "pipe"] });
+	} catch (e) {
+		stderr = String((e as { stderr?: Buffer }).stderr ?? "");
+	}
+	return [...stderr.matchAll(/Video: .*?, (\d+x\d+)/g)].map((m) => m[1]);
+}
+
 describe.skipIf(!ffmpeg)("renderTimeline with a real ffmpeg", () => {
 	const outputDir = mkdtempSync(join(tmpdir(), "demo-render-real-"));
 	afterAll(() => rmSync(outputDir, { recursive: true, force: true }));
+
+	/** A one-colour image of the given size, as a captured frame. */
+	const solidFrame = (
+		color: string,
+		size: string,
+		timestamp: number,
+	): CapturedFrame => {
+		const p = join(outputDir, `solid-${color}-${size}.jpg`);
+		execFileSync(ffmpeg!, [
+			"-v",
+			"error",
+			"-y",
+			"-f",
+			"lavfi",
+			"-i",
+			`color=c=${color}:s=${size}`,
+			"-frames:v",
+			"1",
+			p,
+		]);
+		return {
+			timestamp,
+			data: readFileSync(p).toString("base64"),
+			format: "jpeg",
+		};
+	};
+
+	it("keeps one frame size across a viewport change, so the video plays past it", async () => {
+		const bin = ffmpeg!;
+		// A wide "desktop" step, then a narrow, tall "phone" step.
+		const frames = [
+			solidFrame("red", "128x80", 1000),
+			solidFrame("blue", "38x67", 2000),
+		];
+		const timeline: TimelineEntry[] = [
+			{
+				instruction: "desktop",
+				narrative: "d",
+				startTime: 1000,
+				endTime: 1500,
+				frameCount: 1,
+				segmentDuration: 0.5,
+			},
+			{
+				instruction: "set viewport 375 667",
+				narrative: "p",
+				startTime: 2000,
+				endTime: 2500,
+				frameCount: 1,
+				segmentDuration: 0.5,
+			},
+		];
+
+		const r = await renderTimeline({
+			timeline,
+			frames,
+			outputDir: join(outputDir, "viewport-change"),
+			ffmpegPath: bin,
+			keepIntermediates: true,
+		});
+
+		// Before, the segments came out 128x80 and 38x66 and were copied into
+		// one stream that AVFoundation stops decoding at the change.
+		for (const file of [
+			r.segments[0].segmentVideoPath!,
+			r.segments[1].segmentVideoPath!,
+			r.videoPath,
+		]) {
+			expect(videoSizes(bin, file)).toEqual(["128x80"]);
+		}
+	});
 
 	it("muxes an audio stream that ends where the video does", async () => {
 		const bin = ffmpeg!;
