@@ -100,6 +100,10 @@ Without `--json`, stdout is the path to `final.mp4` and progress goes to stderr.
 
 Also optional: `openArgs` (extra arguments for `open`), `speech.endpoint` (a [voice endpoint](#voice-endpoint) URL, in place of `speech.provider`), `speech.model`, `speech.instructions`, `speech.speed`, `speech.language`, `speech.providerOptions`, and a per-step `speech` block. `agentic-demo schema` prints the full schema.
 
+A step can change the browser's size, with `["set", "viewport", "375", "667"]`, to show a flow on a phone after a desktop. The video keeps one size, the widest and tallest the recording reached, and fits the smaller view inside it, centred on black.
+
+If agent-browser stops sending the browser's picture partway through, the recording stops with an error that names the step, instead of finishing a video that freezes there.
+
 ### Narration
 
 Five voice providers ship with the CLI. Each reads its key from its own environment variable:

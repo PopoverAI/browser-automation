@@ -58,7 +58,8 @@ agentic-demo record FILE      # record (also: agentic-demo FILE)
    `captureSeconds` (how long the commands took), `narrationSeconds` (the
    speech), `renderedSeconds` (the segment's length in the video — the larger
    of the two, plus a short tail), and `frameCount`; a step with
-   `frameCount: 0` produced no visible change.
+   `frameCount: 1` most likely changed nothing on screen, and shows one
+   still picture of the page.
 
 ## Steps file
 
@@ -117,6 +118,13 @@ agentic-demo record FILE      # record (also: agentic-demo FILE)
 ["wait", "--url", "**/dashboard"]
 ["eval", "document.title"]
 ```
+
+`["set", "viewport", "375", "667"]` works inside a step, to show the same
+flow on a phone after a desktop. The video keeps one size, the widest and
+tallest the recording reached, and fits the smaller view inside it, centred
+on black. For a video that is phone-sized throughout, run
+`agent-browser set viewport 375 667` before `agentic-demo record`; the
+browser keeps that size, and the recording starts at it.
 
 Do **not** use `text=…` as a selector — agent-browser does not accept that
 syntax; use `find text <value> click`. Do not put `tab new`, `tab close`,
@@ -196,9 +204,13 @@ Or hand agent-browser a CDP URL you provisioned yourself:
   blocks postinstall downloads) or pass `--ffmpeg <path>`.
 - **`stream socket … did not open`** — the agent-browser daemon isn't running
   or has no page; `agent-browser open <url>` first.
-- **Nothing visible in a segment** (`frameCount: 0` in `--json`) — the step
-  changed nothing on screen; the renderer holds the previous frame. Usually
-  the narration belongs on the previous or next step.
+- **`step N (…): agent-browser's stream has stopped sending frames`** — the
+  recording stopped rather than show an earlier frame, frozen, over step N
+  and the steps after it. Run it again. If it stops at the same step again,
+  record the steps from that one on as their own video.
+- **A segment that is one still picture** (`frameCount: 1` in `--json`) —
+  the step changed nothing on screen. Usually the narration belongs on the
+  previous or next step.
 
 ## Requirements
 

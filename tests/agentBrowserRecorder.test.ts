@@ -78,6 +78,12 @@ interface FakeExecOptions {
 	onBatch?: (
 		commands: string[][],
 	) => BatchCommandResult[] | Promise<BatchCommandResult[]>;
+	/**
+	 * Whether the stream still sends frames. A screenshot makes Chrome draw a
+	 * frame, which a live stream sends on; a stopped one sends nothing.
+	 * Default true.
+	 */
+	streamLive?: () => boolean;
 }
 
 function makeFakeExec(stream: FakeStream, opts: FakeExecOptions = {}) {
@@ -87,6 +93,13 @@ function makeFakeExec(stream: FakeStream, opts: FakeExecOptions = {}) {
 			calls.push([...args]);
 			if (args[0] === "batch") {
 				const commands = JSON.parse(execOpts?.stdin ?? "[]") as string[][];
+				if (commands.length === 1 && commands[0][0] === "screenshot") {
+					if (opts.streamLive?.() ?? true) stream.frame("screenshot");
+					const result = [
+						{ command: commands[0], success: true, result: null, error: null },
+					];
+					return { stdout: JSON.stringify(result), stderr: "", status: 0 };
+				}
 				const results =
 					(await opts.onBatch?.(commands)) ??
 					commands.map((c) => ({
@@ -454,8 +467,114 @@ describe("attachAgentBrowserDemoRecorder", () => {
 		await demo.stop();
 		await until(() => stream.clientCount === 0);
 		await new Promise((r) => setTimeout(r, 20));
-		// No frames were ever captured, so render fails for *that* reason, not a stream failure.
-		await expect(demo.render()).rejects.toThrow(/no frames available/);
+		// Render gets past the stream check to ffmpeg, which is stubbed to stop it there.
+		await expect(
+			demo.render({
+				ffmpegPath: "ffmpeg",
+				exec: () => {
+					throw new Error("reached ffmpeg");
+				},
+			}),
+		).rejects.toThrow(/reached ffmpeg/);
+	});
+
+	it("records a step that changes nothing on screen, with the page as the step left it", async () => {
+		const { exec, calls } = makeFakeExec(stream);
+		const demo = await attachAgentBrowserDemoRecorder({
+			client: new AgentBrowserClient({ exec }),
+			trailingDelay: 0,
+		});
+		await until(() => stream.clientCount === 1);
+		stream.frame("page");
+		await until(() => demo.timeline().frames.length === 1);
+
+		// The page doesn't repaint, so the stream sends nothing during the step.
+		await demo.step([["wait", "1"]], "Nothing moves.");
+
+		// The screenshot proved the stream live, and its frame is the step's picture.
+		expect(calls.filter((c) => c[0] === "batch")).toHaveLength(2);
+		const [entry] = demo.timeline().entries;
+		expect(entry.frameCount).toBe(1);
+		const inStep = demo
+			.timeline()
+			.frames.filter(
+				(f) => f.timestamp >= entry.startTime && f.timestamp <= entry.endTime,
+			);
+		expect(Buffer.from(inStep[0].data, "base64").toString()).toBe(
+			"jpeg-screenshot",
+		);
+		await demo.stop();
+	});
+
+	it("fails a step that brings no frames once the stream has stopped, naming the step", async () => {
+		// Before the check existed, the second step recorded with no frames and the
+		// render held step 1's frame over it: a frozen video, and no error.
+		let live = true;
+		const { exec } = makeFakeExec(stream, {
+			streamLive: () => live,
+			onBatch: (commands) => {
+				if (live) stream.frame(`step-${commands[0][1]}`);
+				return commands.map((c) => ({
+					command: c,
+					success: true,
+					result: null,
+					error: null,
+				}));
+			},
+		});
+		const demo = await attachAgentBrowserDemoRecorder({
+			client: new AgentBrowserClient({ exec }),
+			trailingDelay: 0,
+			frameCheckTimeoutMs: 200,
+		});
+		await until(() => stream.clientCount === 1);
+		await demo.step([["click", "#desktop"]], "On a desktop.");
+
+		live = false; // the socket stays open; frames just stop
+		const err = await demo
+			.step([["set", "viewport", "375", "667"], ["reload"]], "On a phone.")
+			.catch((e: unknown) => e);
+
+		expect(err).toBeInstanceOf(Error);
+		const message = (err as Error).message;
+		expect(message).toMatch(
+			/^step 2 \(set viewport 375 667 && reload\): agent-browser's stream has stopped sending frames/,
+		);
+		expect(message).toMatch(/The last frame arrived during step 1\./);
+		expect(demo.timeline().entries).toHaveLength(1);
+		await demo.stop();
+	});
+
+	it("fails a step that brings no frames when the screenshot checking the stream fails", async () => {
+		const { exec } = makeFakeExec(stream);
+		const client = new AgentBrowserClient({
+			exec: async (args, o) => {
+				if (args[0] === "batch" && o?.stdin?.includes('"screenshot"')) {
+					return {
+						stdout: JSON.stringify([
+							{
+								command: ["screenshot"],
+								success: false,
+								result: null,
+								error: "Browser not launched",
+							},
+						]),
+						stderr: "",
+						status: 0,
+					};
+				}
+				return exec(args, o);
+			},
+		});
+		const demo = await attachAgentBrowserDemoRecorder({
+			streamUrl: stream.url,
+			client,
+			trailingDelay: 0,
+		});
+		await expect(demo.step([["wait", "1"]], "n")).rejects.toThrow(
+			/^step 1 \(wait 1\) brought no frames .* screenshot taken to check the stream failed: Browser not launched$/,
+		);
+		await demo.stop();
 	});
 
 	it("appends maxFps to the stream URL when set", async () => {

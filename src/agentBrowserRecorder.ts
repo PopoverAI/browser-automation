@@ -1,3 +1,8 @@
+import { randomUUID } from "node:crypto";
+import { rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import WebSocket from "ws";
 
 import {
@@ -48,6 +53,12 @@ export interface AttachAgentBrowserDemoRecorderOptions {
 	maxFps?: number;
 	/** Give up attaching if the stream socket hasn't opened after this (ms). Default 10000. */
 	connectTimeoutMs?: number;
+	/**
+	 * When a step brings no frames, how long (ms) to wait for the frame a
+	 * screenshot makes a live stream send before calling the stream stopped.
+	 * Default 2000, plus one frame interval when `maxFps` is set.
+	 */
+	frameCheckTimeoutMs?: number;
 	/**
 	 * Override the stream WebSocket URL instead of discovering it through
 	 * `agent-browser stream status`. Primarily a test seam.
@@ -104,7 +115,16 @@ interface StreamFrameMessage {
 	metadata?: { timestamp?: number };
 }
 
+/** The daemon's `status` message, sent on connect and whenever the screencast restarts. */
+interface StreamStatusMessage {
+	type: "status";
+	screencasting?: boolean;
+	viewportWidth?: number;
+	viewportHeight?: number;
+}
+
 const DEFAULT_STEP_TIMEOUT_MS = 120_000;
+const DEFAULT_FRAME_CHECK_TIMEOUT_MS = 2000;
 
 /**
  * Render a batch as a one-line instruction label for the timeline, e.g.
@@ -130,6 +150,15 @@ export function formatCommands(
  *
  * The daemon must already have a page open (`agent-browser open <url>`) so
  * the stream has something to capture.
+ *
+ * The stream sends a frame only when the page repaints, so a step that
+ * changes nothing on screen brings none. So does a stream that has stopped,
+ * and holding the last frame over that step would freeze the video while the
+ * page moved on. To tell the two apart, a step that brought no frames takes a
+ * screenshot: the capture makes Chrome draw a frame, and a live stream sends
+ * it (seen on agent-browser 0.36 and 0.38, local Chrome on macOS and Linux).
+ * That frame, of the page as the step left it, becomes the step's picture. If
+ * none arrives, the step fails and names itself.
  */
 export async function attachAgentBrowserDemoRecorder(
 	options: AttachAgentBrowserDemoRecorderOptions = {},
@@ -140,6 +169,10 @@ export async function attachAgentBrowserDemoRecorder(
 		maxFps = 0,
 		connectTimeoutMs = 10_000,
 	} = options;
+	// A frame-rate cap can hold a frame back for up to one interval.
+	const frameCheckTimeoutMs =
+		options.frameCheckTimeoutMs ??
+		DEFAULT_FRAME_CHECK_TIMEOUT_MS + (maxFps > 0 ? 1000 / maxFps : 0);
 
 	let streamUrl = options.streamUrl;
 	let enabledByUs = false;
@@ -153,6 +186,8 @@ export async function attachAgentBrowserDemoRecorder(
 	let stopped = false;
 	/** Set when the stream dies mid-run; the next step() fails instead of recording nothing. */
 	let streamFailure: Error | undefined;
+	/** The daemon's latest `status` message, quoted when the stream stops. */
+	let lastStatus: StreamStatusMessage | undefined;
 
 	let ws: WebSocket;
 	try {
@@ -189,6 +224,10 @@ export async function attachAgentBrowserDemoRecorder(
 		} catch {
 			return;
 		}
+		if (msg.type === "status") {
+			lastStatus = msg as StreamStatusMessage;
+			return;
+		}
 		if (msg.type !== "frame") return;
 		const frame = msg as StreamFrameMessage;
 		if (typeof frame.data !== "string") return;
@@ -201,6 +240,88 @@ export async function attachAgentBrowserDemoRecorder(
 				: Date.now();
 		frames.push({ timestamp: ts, data: frame.data, format: "jpeg" });
 	});
+
+	const countFrames = (from: number, to: number) =>
+		frames.filter((f) => f.timestamp >= from && f.timestamp <= to).length;
+
+	/**
+	 * For a step that brought no frames: take a screenshot, which makes a live
+	 * stream send a frame of the page as it is. Returns the step's new end
+	 * time, which takes that frame in. Throws, naming the step, if no frame
+	 * comes: the stream has stopped, and anything recorded from here on would
+	 * show an earlier frame frozen.
+	 */
+	const checkStreamIsLive = async (instruction: string): Promise<number> => {
+		const step = `step ${entries.length + 1} (${instruction})`;
+		const before = frames.length;
+		const shot = join(tmpdir(), `agentic-demo-check-${randomUUID()}.png`);
+		let failure: string | undefined;
+		try {
+			const [r] = await client.batch([["screenshot", shot]], {
+				bail: true,
+				timeoutMs: 30_000,
+			});
+			if (!r?.success) failure = r?.error ?? "no result";
+		} catch (err) {
+			failure = err instanceof Error ? err.message : String(err);
+		} finally {
+			rmSync(shot, { force: true });
+		}
+		if (failure !== undefined) {
+			throw new Error(
+				`${step} brought no frames from agent-browser's stream, and the screenshot taken to check the stream failed: ${failure}`,
+			);
+		}
+		const deadline = Date.now() + frameCheckTimeoutMs;
+		while (
+			frames.length === before &&
+			!streamFailure &&
+			Date.now() < deadline
+		) {
+			await new Promise<void>((resolve) => setTimeout(resolve, 20));
+		}
+		if (streamFailure) {
+			throw new Error(`${step}: cannot record — ${streamFailure.message}`, {
+				cause: streamFailure,
+			});
+		}
+		if (frames.length === before) {
+			throw new Error(
+				[
+					`${step}: agent-browser's stream has stopped sending frames.`,
+					"The step brought none, and neither did a screenshot, which makes a live stream send one.",
+					"Recording on would show an earlier frame, frozen, over this step and every step after it.",
+					lastFrameNote(),
+					statusNote(),
+					"Run the recording again; if it stops at this step again, record the steps from here on as their own video.",
+				]
+					.filter(Boolean)
+					.join(" "),
+			);
+		}
+		const arrived = frames.slice(before).map((f) => f.timestamp);
+		return Math.max(Date.now(), ...arrived);
+	};
+
+	/** Which step the stream's last frame arrived in, for the stall message. */
+	const lastFrameNote = (): string => {
+		const last = frames.at(-1);
+		if (!last) return "No frame has arrived since the recording started.";
+		let i = entries.length - 1;
+		while (i >= 0 && last.timestamp < entries[i].startTime) i--;
+		return i >= 0
+			? `The last frame arrived during step ${i + 1}.`
+			: "The last frame arrived before step 1.";
+	};
+
+	const statusNote = (): string | undefined => {
+		if (!lastStatus) return undefined;
+		const size =
+			lastStatus.viewportWidth && lastStatus.viewportHeight
+				? ` at ${lastStatus.viewportWidth}x${lastStatus.viewportHeight}`
+				: "";
+		return `agent-browser last reported the stream as ${lastStatus.screencasting ? "capturing" : "not capturing"}${size}.`;
+	};
 
 	const stop = async () => {
 		if (stopped) return;
@@ -271,10 +392,12 @@ export async function attachAgentBrowserDemoRecorder(
 			if (trail > 0) {
 				await new Promise<void>((resolve) => setTimeout(resolve, trail));
 			}
-			const endTime = Date.now();
-			let frameCount = 0;
-			for (const f of frames) {
-				if (f.timestamp >= startTime && f.timestamp <= endTime) frameCount++;
+			let endTime = Date.now();
+			let frameCount = countFrames(startTime, endTime);
+			if (frameCount === 0) {
+				// No repaint, or a stopped stream: the screenshot's frame says which.
+				endTime = await checkStreamIsLive(instruction);
+				frameCount = countFrames(startTime, endTime);
 			}
 			entries.push({
 				instruction,

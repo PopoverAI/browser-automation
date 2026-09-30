@@ -57,6 +57,32 @@ function makeTimeline(): {
 	return { timeline: [entry1, entry2], frames };
 }
 
+/** The header of a PNG of the given size — all the renderer reads of a frame. */
+function png(width: number, height: number): string {
+	const b = Buffer.alloc(24);
+	b.writeUInt32BE(0x89504e47, 0);
+	b.writeUInt32BE(0x0d0a1a0a, 4);
+	b.writeUInt32BE(13, 8);
+	b.write("IHDR", 12, "latin1");
+	b.writeUInt32BE(width, 16);
+	b.writeUInt32BE(height, 20);
+	return b.toString("base64");
+}
+
+/** The start of a baseline JPEG of the given size: SOI, an APP0 segment, then SOF0. */
+function jpeg(width: number, height: number): string {
+	const app0 = Buffer.from([0xff, 0xe0, 0x00, 0x04, 0x00, 0x00]);
+	const sof0 = Buffer.alloc(19);
+	sof0.writeUInt16BE(0xffc0, 0);
+	sof0.writeUInt16BE(17, 2);
+	sof0[4] = 8; // precision
+	sof0.writeUInt16BE(height, 5);
+	sof0.writeUInt16BE(width, 7);
+	return Buffer.concat([Buffer.from([0xff, 0xd8]), app0, sof0]).toString(
+		"base64",
+	);
+}
+
 const PROBE_STDERR =
 	"ffmpeg version blah\n  Duration: 00:00:02.50, start: 0.000000, bitrate: 32 kb/s\n  Stream #0:0\n";
 
@@ -277,7 +303,77 @@ describe("renderTimeline", () => {
 		);
 	});
 
-	it("includes the even-dimension scale filter in encode commands", async () => {
+	it("encodes every segment at one size when the viewport changes mid-recording", async () => {
+		// A desktop step, then the same flow at a phone viewport. Segments
+		// encoded at their own sizes were joined into one stream that
+		// QuickTime and Safari cannot decode past the change: they held the
+		// last desktop frame, frozen, over the phone steps.
+		const timeline: TimelineEntry[] = [
+			{
+				instruction: "click #go",
+				narrative: "On a desktop.",
+				startTime: 1000,
+				endTime: 1100,
+				frameCount: 1,
+				segmentDuration: 0.1,
+			},
+			{
+				instruction: "set viewport 375 667 && reload",
+				narrative: "On a phone.",
+				startTime: 1200,
+				endTime: 1300,
+				frameCount: 1,
+				segmentDuration: 0.1,
+			},
+		];
+		const frames: CapturedFrame[] = [
+			{ timestamp: 1050, data: jpeg(1280, 800), format: "jpeg" },
+			{ timestamp: 1250, data: jpeg(375, 667), format: "jpeg" },
+		];
+		const { exec } = makeDefaultExec();
+
+		await renderTimeline({ timeline, frames, outputDir, speech, exec });
+
+		const filters = exec.mock.calls
+			.filter(([, args]) => args.includes("libx264"))
+			.map(([, args]) => args[args.indexOf("-vf") + 1]);
+		expect(filters).toHaveLength(2);
+		// Both segments: scaled to fit 1280x800, centred, square pixels.
+		for (const vf of filters) {
+			expect(vf).toBe(
+				"scale=1280:800:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1280:800:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1",
+			);
+		}
+	});
+
+	it("sizes the video to the widest and tallest frame, rounded up to even numbers", async () => {
+		const timeline: TimelineEntry[] = [
+			{
+				instruction: "x",
+				narrative: "n",
+				startTime: 1000,
+				endTime: 1100,
+				frameCount: 2,
+				segmentDuration: 0.1,
+			},
+		];
+		const frames: CapturedFrame[] = [
+			{ timestamp: 1010, data: png(801, 400) },
+			{ timestamp: 1020, data: png(375, 667) },
+		];
+		const { exec } = makeDefaultExec();
+
+		await renderTimeline({ timeline, frames, outputDir, speech, exec });
+
+		const encode = exec.mock.calls.find(([, args]) =>
+			args.includes("libx264"),
+		)![1];
+		expect(encode[encode.indexOf("-vf") + 1]).toMatch(
+			/^scale=802:668:.*pad=802:668:/,
+		);
+	});
+
+	it("encodes each frame at its own even size when frame sizes can't be read", async () => {
 		const { timeline, frames } = makeTimeline();
 		const { exec } = makeDefaultExec();
 
