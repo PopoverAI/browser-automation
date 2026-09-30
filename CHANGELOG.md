@@ -20,12 +20,17 @@ Fixed
 - **A recording whose picture stops no longer finishes as a frozen video.**
   agent-browser's stream sends a frame only when the page repaints, so a
   step that changed nothing on screen brings no frames, and the renderer held
-  the previous one. A stream that had stopped looked the same, and the video
-  froze with no error. Now a step that brings no frames takes a screenshot,
-  which makes a live stream send a frame of the page as it is. That frame
-  becomes the step's picture; if none arrives, the recording fails with
-  `step N (…): agent-browser's stream has stopped sending frames`. A step
-  that changed nothing now reports `frameCount: 1` in `--json`, not 0.
+  the previous one. A stream that had stopped, before a step or partway
+  through it, looked the same, and the video froze with no error. Now every
+  step ends by reconnecting to the stream. agent-browser restarts its capture
+  for a client that arrives when no one else is watching, and Chrome sends a
+  frame of the page as it is, about 35 ms per step in all. For a step that
+  changed nothing, that frame is its picture, so it now reports
+  `frameCount: 1` in `--json`, not 0; for any other step it only proves the
+  stream live, and the video is as before. If none arrives, the recording
+  fails with `step N (…): agent-browser's stream has stopped sending frames`.
+  Something else watching the stream, such as agent-browser's dashboard,
+  keeps the capture from restarting and fails the check the same way.
 
 ## 0.15.2 — 2026-09-25
 

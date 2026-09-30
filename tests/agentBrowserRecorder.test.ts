@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type WebSocket, WebSocketServer } from "ws";
+import {
+	type WebSocket,
+	WebSocket as WebSocketClient,
+	WebSocketServer,
+} from "ws";
 
 import {
 	AgentBrowserClient,
@@ -15,14 +19,23 @@ import {
 } from "../src/agentBrowserRecorder.js";
 
 /**
- * A fake agent-browser daemon stream: a WebSocket server that can push
- * `frame` messages to whoever is connected, in the shape 0.36 sends them
- * (no seq, metadata.timestamp === 0).
+ * A fake agent-browser daemon stream: a WebSocket server that pushes `frame`
+ * messages to whoever is connected, numbered with `seq` as agent-browser
+ * numbers them. Like the daemon, it greets each new client with the newest
+ * frame it already has (same `seq`), and when a client arrives with no one
+ * else watching it restarts its capture, which sends a new frame of the page
+ * as it is ("start" if nothing has been drawn yet). The first connection's
+ * start frame is left out: tests send the frames they need.
  */
 class FakeStream {
 	private wss!: WebSocketServer;
 	private clients = new Set<WebSocket>();
+	private seq = 0;
+	private newest?: { label: string; message: string };
+	private connections = 0;
 	url = "";
+	/** While false the stream has stopped: the socket stays open, frames don't come. */
+	live = true;
 
 	async start(): Promise<void> {
 		this.wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });
@@ -31,6 +44,8 @@ class FakeStream {
 		if (typeof addr === "string" || !addr) throw new Error("no address");
 		this.url = `ws://127.0.0.1:${addr.port}/`;
 		this.wss.on("connection", (ws) => {
+			this.connections++;
+			const alone = this.clients.size === 0;
 			this.clients.add(ws);
 			ws.send(
 				JSON.stringify({
@@ -39,6 +54,10 @@ class FakeStream {
 					screencasting: true,
 				}),
 			);
+			if (this.newest) ws.send(this.newest.message);
+			if (alone && this.connections > 1) {
+				this.frame(this.newest?.label ?? "start");
+			}
 			ws.on("close", () => this.clients.delete(ws));
 		});
 	}
@@ -48,12 +67,15 @@ class FakeStream {
 	}
 
 	frame(label: string, timestamp = 0): void {
-		const msg = JSON.stringify({
+		if (!this.live) return;
+		const message = JSON.stringify({
 			type: "frame",
+			seq: ++this.seq,
 			data: Buffer.from(`jpeg-${label}`).toString("base64"),
 			metadata: { deviceWidth: 1280, deviceHeight: 720, timestamp },
 		});
-		for (const c of this.clients) c.send(msg);
+		this.newest = { label, message };
+		for (const c of this.clients) c.send(message);
 	}
 
 	async stop(): Promise<void> {
@@ -78,12 +100,6 @@ interface FakeExecOptions {
 	onBatch?: (
 		commands: string[][],
 	) => BatchCommandResult[] | Promise<BatchCommandResult[]>;
-	/**
-	 * Whether the stream still sends frames. A screenshot makes Chrome draw a
-	 * frame, which a live stream sends on; a stopped one sends nothing.
-	 * Default true.
-	 */
-	streamLive?: () => boolean;
 }
 
 function makeFakeExec(stream: FakeStream, opts: FakeExecOptions = {}) {
@@ -93,13 +109,6 @@ function makeFakeExec(stream: FakeStream, opts: FakeExecOptions = {}) {
 			calls.push([...args]);
 			if (args[0] === "batch") {
 				const commands = JSON.parse(execOpts?.stdin ?? "[]") as string[][];
-				if (commands.length === 1 && commands[0][0] === "screenshot") {
-					if (opts.streamLive?.() ?? true) stream.frame("screenshot");
-					const result = [
-						{ command: commands[0], success: true, result: null, error: null },
-					];
-					return { stdout: JSON.stringify(result), stderr: "", status: 0 };
-				}
 				const results =
 					(await opts.onBatch?.(commands)) ??
 					commands.map((c) => ({
@@ -233,8 +242,15 @@ describe("attachAgentBrowserDemoRecorder", () => {
 		expect(e.narrative).toBe("Click the thing.");
 		expect(e.endTime - e.startTime).toBeGreaterThanOrEqual(20);
 		expect(e.segmentDuration).toBeCloseTo((e.endTime - e.startTime) / 1000, 6);
-		expect(frames).toHaveLength(2);
+		// The step's own two frames, then the new one the closing reconnect
+		// brought (the repeat of the cached frame is not kept). It proves the
+		// stream live but stays out of a step that has frames.
+		expect(frames).toHaveLength(3);
+		expect(Buffer.from(frames[2].data, "base64").toString()).toBe(
+			"jpeg-during-2",
+		);
 		expect(e.frameCount).toBe(2);
+		expect(frames[2].timestamp).toBeGreaterThanOrEqual(e.endTime);
 		await demo.stop();
 	});
 
@@ -491,8 +507,9 @@ describe("attachAgentBrowserDemoRecorder", () => {
 		// The page doesn't repaint, so the stream sends nothing during the step.
 		await demo.step([["wait", "1"]], "Nothing moves.");
 
-		// The screenshot proved the stream live, and its frame is the step's picture.
-		expect(calls.filter((c) => c[0] === "batch")).toHaveLength(2);
+		// Reconnecting proved the stream live, and the frame its restart sent is
+		// the step's picture. No extra agent-browser command ran.
+		expect(calls.filter((c) => c[0] === "batch")).toHaveLength(1);
 		const [entry] = demo.timeline().entries;
 		expect(entry.frameCount).toBe(1);
 		const inStep = demo
@@ -500,20 +517,16 @@ describe("attachAgentBrowserDemoRecorder", () => {
 			.frames.filter(
 				(f) => f.timestamp >= entry.startTime && f.timestamp <= entry.endTime,
 			);
-		expect(Buffer.from(inStep[0].data, "base64").toString()).toBe(
-			"jpeg-screenshot",
-		);
+		expect(Buffer.from(inStep[0].data, "base64").toString()).toBe("jpeg-page");
 		await demo.stop();
 	});
 
 	it("fails a step that brings no frames once the stream has stopped, naming the step", async () => {
 		// Before the check existed, the second step recorded with no frames and the
 		// render held step 1's frame over it: a frozen video, and no error.
-		let live = true;
 		const { exec } = makeFakeExec(stream, {
-			streamLive: () => live,
 			onBatch: (commands) => {
-				if (live) stream.frame(`step-${commands[0][1]}`);
+				stream.frame(`step-${commands[0][1]}`);
 				return commands.map((c) => ({
 					command: c,
 					success: true,
@@ -525,12 +538,12 @@ describe("attachAgentBrowserDemoRecorder", () => {
 		const demo = await attachAgentBrowserDemoRecorder({
 			client: new AgentBrowserClient({ exec }),
 			trailingDelay: 0,
-			frameCheckTimeoutMs: 200,
+			frameCheckTimeoutMs: 1000,
 		});
 		await until(() => stream.clientCount === 1);
 		await demo.step([["click", "#desktop"]], "On a desktop.");
 
-		live = false; // the socket stays open; frames just stop
+		stream.live = false; // the socket stays open; frames just stop
 		const err = await demo
 			.step([["set", "viewport", "375", "667"], ["reload"]], "On a phone.")
 			.catch((e: unknown) => e);
@@ -545,35 +558,73 @@ describe("attachAgentBrowserDemoRecorder", () => {
 		await demo.stop();
 	});
 
-	it("fails a step that brings no frames when the screenshot checking the stream fails", async () => {
-		const { exec } = makeFakeExec(stream);
-		const client = new AgentBrowserClient({
-			exec: async (args, o) => {
-				if (args[0] === "batch" && o?.stdin?.includes('"screenshot"')) {
-					return {
-						stdout: JSON.stringify([
-							{
-								command: ["screenshot"],
-								success: false,
-								result: null,
-								error: "Browser not launched",
-							},
-						]),
-						stderr: "",
-						status: 0,
-					};
-				}
-				return exec(args, o);
+	it("fails a step whose frames stop partway, before a later command changes the page", async () => {
+		// The step's first command repaints and its frame arrives; then the
+		// stream stops, and the second command's change is never sent. Before,
+		// the step's one frame counted as proof and the recording went on with
+		// the video frozen on the page before `click #submit`.
+		const { exec } = makeFakeExec(stream, {
+			onBatch: async (commands) => {
+				stream.frame("form-filled");
+				await until(() => demo.timeline().frames.length === 1);
+				stream.live = false; // the socket stays open; frames just stop
+				stream.frame("submitted"); // the click's repaint, never sent
+				return commands.map((c) => ({
+					command: c,
+					success: true,
+					result: null,
+					error: null,
+				}));
 			},
 		});
 		const demo = await attachAgentBrowserDemoRecorder({
-			streamUrl: stream.url,
-			client,
+			client: new AgentBrowserClient({ exec }),
 			trailingDelay: 0,
+			frameCheckTimeoutMs: 200,
 		});
-		await expect(demo.step([["wait", "1"]], "n")).rejects.toThrow(
-			/^step 1 \(wait 1\) brought no frames .* screenshot taken to check the stream failed: Browser not launched$/,
+		await until(() => stream.clientCount === 1);
+
+		const err = await demo
+			.step(
+				[
+					["fill", "#name", "Grace"],
+					["click", "#submit"],
+				],
+				"Submit the form.",
+			)
+			.catch((e: unknown) => e);
+
+		expect(err).toBeInstanceOf(Error);
+		const message = (err as Error).message;
+		expect(message).toMatch(
+			/^step 1 \(fill #name Grace && click #submit\): agent-browser's stream has stopped sending frames/,
 		);
+		expect(message).toMatch(/The last frame arrived earlier in step 1\./);
+		expect(demo.timeline().entries).toHaveLength(0);
+		await demo.stop();
+	});
+
+	it("names another watcher of the stream as a cause when the check brings no new frame", async () => {
+		// With a second client connected, the daemon never restarts its capture,
+		// so a reconnect brings only the cached frame.
+		const { exec } = makeFakeExec(stream);
+		const demo = await attachAgentBrowserDemoRecorder({
+			client: new AgentBrowserClient({ exec }),
+			trailingDelay: 0,
+			frameCheckTimeoutMs: 200,
+		});
+		await until(() => stream.clientCount === 1);
+		stream.frame("page");
+		await until(() => demo.timeline().frames.length === 1);
+		const dashboard = new WebSocketClient(stream.url);
+		await until(() => stream.clientCount === 2);
+
+		await expect(demo.step([["wait", "1"]], "n")).rejects.toThrow(
+			/If something else is watching agent-browser's stream, such as its dashboard, close it/,
+		);
+		// The cached frame the reconnect repeated was not taken as new.
+		expect(demo.timeline().frames).toHaveLength(1);
+		dashboard.close();
 		await demo.stop();
 	});
 

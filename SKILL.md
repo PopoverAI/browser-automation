@@ -206,7 +206,9 @@ Or hand agent-browser a CDP URL you provisioned yourself:
   or has no page; `agent-browser open <url>` first.
 - **`step N (…): agent-browser's stream has stopped sending frames`** — the
   recording stopped rather than show an earlier frame, frozen, over step N
-  and the steps after it. Run it again. If it stops at the same step again,
+  and the steps after it. If anything else is watching agent-browser's
+  stream (its dashboard, another recording), close it: the check needs to be
+  the only viewer. Then run it again. If it stops at the same step again,
   record the steps from that one on as their own video.
 - **A segment that is one still picture** (`frameCount: 1` in `--json`) —
   the step changed nothing on screen. Usually the narration belongs on the
