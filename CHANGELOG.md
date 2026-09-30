@@ -5,7 +5,7 @@
 A merged version bump publishes itself from CI (see CLAUDE.md → Releases).
 This package is 0.x: a minor bump is a breaking change.
 
-## Unreleased
+## 0.15.3 — 2026-09-29
 
 Fixed
 
