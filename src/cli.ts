@@ -198,7 +198,7 @@ const recordOptions = (cmd: typeof program) =>
 		.option("--session <name>", "agent-browser --session to drive")
 		.option(
 			"--agent-browser <cmd>",
-			'command used to invoke agent-browser (default: "npx agent-browser")',
+			'command used to invoke agent-browser (default: the installed copy, else "npx agent-browser")',
 		)
 		.option(
 			"--trailing-delay <ms>",

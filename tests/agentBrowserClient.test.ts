@@ -1,10 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import {
+	mkdirSync,
+	mkdtempSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
 	AgentBrowserClient,
 	AgentBrowserError,
 	type AgentBrowserExec,
 	type AgentBrowserExecResult,
+	DEFAULT_AGENT_BROWSER_COMMAND,
+	defaultAgentBrowserCommand,
 	parseJsonOutput,
 	spawnExec,
 } from "../src/agentBrowserClient.js";
@@ -181,5 +193,105 @@ describe("spawnExec", () => {
 		await expect(exec([], { stdin: "x", timeoutMs: 200 })).rejects.toThrow(
 			/timed out/,
 		);
+	});
+});
+
+describe("defaultAgentBrowserCommand", () => {
+	/** Every folder a test made, removed after it. */
+	const made: string[] = [];
+	const folder = (prefix: string) => {
+		const dir = mkdtempSync(join(tmpdir(), prefix));
+		made.push(dir);
+		return dir;
+	};
+	afterEach(() => {
+		for (const dir of made.splice(0))
+			rmSync(dir, { recursive: true, force: true });
+	});
+
+	/** A folder with agent-browser installed in its node_modules, as npm or pnpm lays it out. */
+	const withAgentBrowser = () => {
+		// Resolved as Node resolves it, through the temp folder's symlink on macOS.
+		const root = realpathSync(folder("ab-lookup-"));
+		const pkg = join(root, "node_modules", "agent-browser");
+		mkdirSync(join(pkg, "bin"), { recursive: true });
+		writeFileSync(
+			join(pkg, "package.json"),
+			JSON.stringify({
+				name: "agent-browser",
+				bin: { "agent-browser": "./bin/agent-browser.js" },
+			}),
+		);
+		writeFileSync(join(pkg, "bin", "agent-browser.js"), "");
+		return { root, script: join(pkg, "bin", "agent-browser.js") };
+	};
+	const empty = () => folder("ab-none-");
+	const NODE = join("/opt", "node", "bin", "node");
+
+	it("runs the project's installed agent-browser as its own script on this Node, with no npx or shell", () => {
+		const project = withAgentBrowser();
+		expect(
+			defaultAgentBrowserCommand({
+				cwd: project.root,
+				from: pathToFileURL(join(empty(), "cli.js")).href,
+				execPath: NODE,
+			}),
+		).toEqual([NODE, project.script]);
+	});
+
+	it("runs the copy installed beside the recorder when the project has none, as a global install puts them", () => {
+		const beside = withAgentBrowser();
+		expect(
+			defaultAgentBrowserCommand({
+				cwd: empty(),
+				from: pathToFileURL(join(beside.root, "node_modules", "x", "cli.js"))
+					.href,
+				execPath: NODE,
+			}),
+		).toEqual([NODE, beside.script]);
+	});
+
+	it("with none installed, runs npx through npm's own script on this Node, so Windows needs no shell", () => {
+		const npxCli = join(
+			"/opt",
+			"node",
+			"bin",
+			"node_modules",
+			"npm",
+			"bin",
+			"npx-cli.js",
+		);
+		expect(
+			defaultAgentBrowserCommand({
+				cwd: empty(),
+				from: pathToFileURL(join(empty(), "cli.js")).href,
+				execPath: NODE,
+				exists: (path) => path === npxCli,
+			}),
+		).toEqual([NODE, npxCli, "--yes", "agent-browser"]);
+	});
+
+	it("with neither agent-browser nor npm's script found, falls back to npx on the path", () => {
+		expect(
+			defaultAgentBrowserCommand({
+				cwd: empty(),
+				from: pathToFileURL(join(empty(), "cli.js")).href,
+				execPath: NODE,
+				exists: () => false,
+				platform: "darwin",
+			}),
+		).toEqual(DEFAULT_AGENT_BROWSER_COMMAND);
+	});
+
+	it("on Windows, with neither found, says to install agent-browser rather than failing to start npx", () => {
+		expect(() =>
+			defaultAgentBrowserCommand({
+				cwd: empty(),
+				from: pathToFileURL(join(empty(), "cli.js")).href,
+				execPath: NODE,
+				exists: () => false,
+				platform: "win32",
+			}),
+		).toThrow(/Install agent-browser .* or pass --agent-browser/);
 	});
 });

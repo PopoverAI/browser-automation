@@ -5,6 +5,21 @@
 A merged version bump publishes itself from CI (see CLAUDE.md → Releases).
 This package is 0.x: a minor bump is a breaking change.
 
+## 0.15.5 — 2026-11-19
+
+Fixed
+
+- **Recording on Windows.** agentic-demo started agent-browser as
+  `npx agent-browser` with no shell, which Windows can't do: `npx` there is
+  `npx.cmd`. It now runs an installed agent-browser's own script on the Node
+  running agentic-demo, with no shell on any system: the project's copy, else
+  one installed beside agentic-demo, as a global install puts them. With
+  neither installed, it runs `npx agent-browser` through npm's own
+  `npx-cli.js` on that Node, and only when that isn't found does it fall back
+  to `npx` on the path as before; on Windows, where that can't start either, it says to install agent-browser or pass `--agent-browser`. Running an installed copy directly also
+  means the copy pinned beside agentic-demo is the one used, never one `npx`
+  would fetch. `--agent-browser` still overrides it.
+
 ## 0.15.4 — 2026-09-30
 
 Added

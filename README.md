@@ -44,7 +44,7 @@ npx agentic-demo --help              # Without installing
 npm install -g agentic-demo@latest   # Update
 ```
 
-Requires Node.js 22+. Installing downloads an ffmpeg binary (about 77 MB); pnpm 10 blocks that download until you run `pnpm approve-builds`, or point `--ffmpeg` / `FFMPEG_BIN` at another ffmpeg. agent-browser runs as `npx agent-browser`, which uses your installed copy if there is one. The same CLI is also published as [`@popoverai/browser-automation`](https://www.npmjs.com/package/@popoverai/browser-automation).
+Requires Node.js 22+. Installing downloads an ffmpeg binary (about 77 MB); pnpm 10 blocks that download until you run `pnpm approve-builds`, or point `--ffmpeg` / `FFMPEG_BIN` at another ffmpeg. agentic-demo runs your installed agent-browser directly (your project's, else one installed beside agentic-demo), and `npx agent-browser` only when there is none, so it works the same on Windows. The same CLI is also published as [`@popoverai/browser-automation`](https://www.npmjs.com/package/@popoverai/browser-automation).
 
 Versions are 0.x, so a minor version can break things. The [changelog](https://github.com/PopoverAI/browser-automation/blob/main/CHANGELOG.md) lists every change.
 
@@ -71,7 +71,7 @@ For the step-by-step workflow, run `agentic-demo guide`.
 | `--silent`                 | Silent audio track sized to the narration; no key needed         |
 | `--keep`                   | Keep each segment's audio, video and frames next to `final.mp4`  |
 | `--session <name>`         | agent-browser session to drive                                   |
-| `--agent-browser "<cmd>"`  | How to run agent-browser (default: `npx agent-browser`)          |
+| `--agent-browser "<cmd>"`  | How to run agent-browser (default: the installed copy, else `npx agent-browser`) |
 | `--trailing-delay <ms>`    | Default `trailingDelay` for every step (default: 1000)           |
 | `--max-fps <n>`            | Cap the capture frame rate (default: uncapped)                   |
 | `--ffmpeg <path>`          | ffmpeg binary (default: ffmpeg-static's, or `FFMPEG_BIN`)        |
