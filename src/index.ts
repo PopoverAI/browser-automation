@@ -11,6 +11,7 @@ export {
 	AgentBrowserClient,
 	AgentBrowserError,
 	DEFAULT_AGENT_BROWSER_COMMAND,
+	defaultAgentBrowserCommand,
 } from "./agentBrowserClient.js";
 export type {
 	AgentBrowserDemoRecorder,

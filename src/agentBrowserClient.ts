@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 
 /**
  * Result of one agent-browser CLI invocation. Mirrors the spawn-result shape
@@ -30,8 +33,9 @@ export type AgentBrowserExec = (
 export interface AgentBrowserClientOptions {
 	/**
 	 * Command used to invoke agent-browser, as argv. Default
-	 * `["npx", "agent-browser"]` so no global install is required. Pass e.g.
-	 * `["agent-browser"]` for a globally installed binary.
+	 * `defaultAgentBrowserCommand()`: an installed copy, run directly, else
+	 * `npx agent-browser`, so no install is required. Pass e.g.
+	 * `["agent-browser"]` for one on the path.
 	 */
 	command?: string[];
 	/** agent-browser `--session <name>` to scope every command to. */
@@ -65,7 +69,79 @@ export interface StreamStatus {
 	screencasting?: boolean;
 }
 
+/** The command used when no installed agent-browser is found and npm's own `npx` can't be located. */
 export const DEFAULT_AGENT_BROWSER_COMMAND = ["npx", "agent-browser"];
+
+/** Where `defaultAgentBrowserCommand` looks: a test seam. */
+export interface AgentBrowserLookup {
+	/** The folder the recording runs from; its project's agent-browser comes first. */
+	cwd?: string;
+	/** This package's own location; an agent-browser installed beside it comes next. */
+	from?: string;
+	/** The Node running the recorder, which runs agent-browser's own script. */
+	execPath?: string;
+	exists?: (path: string) => boolean;
+}
+
+/**
+ * How to run agent-browser when `--agent-browser` doesn't say, without a
+ * shell on any system: the project's installed copy, else one installed
+ * beside this package (as a global install puts them), each run as its own
+ * script on this Node. Only when neither is installed does it fall back to
+ * `npx agent-browser`, run through npm's own `npx-cli.js` on this Node, since
+ * Windows can't start `npx.cmd` without a shell. Running an installed copy
+ * directly also means the one pinned beside the recorder is the one used,
+ * never one `npx` would fetch.
+ */
+export function defaultAgentBrowserCommand(
+	lookup: AgentBrowserLookup = {},
+): string[] {
+	const execPath = lookup.execPath ?? process.execPath;
+	const exists = lookup.exists ?? existsSync;
+	const places = [
+		join(lookup.cwd ?? process.cwd(), "package.json"),
+		lookup.from ?? import.meta.url,
+	];
+	for (const place of places) {
+		const script = installedScript(place);
+		if (script && exists(script)) return [execPath, script];
+	}
+	const npx = join(
+		dirname(execPath),
+		"node_modules",
+		"npm",
+		"bin",
+		"npx-cli.js",
+	);
+	const npxOnPosix = join(
+		dirname(execPath),
+		"..",
+		"lib",
+		"node_modules",
+		"npm",
+		"bin",
+		"npx-cli.js",
+	);
+	for (const cli of [npx, npxOnPosix]) {
+		if (exists(cli)) return [execPath, cli, "--yes", "agent-browser"];
+	}
+	return DEFAULT_AGENT_BROWSER_COMMAND;
+}
+
+/** agent-browser's own script, as installed where `place` resolves packages from, or null. */
+function installedScript(place: string): string | null {
+	try {
+		const require = createRequire(place);
+		const manifest = require.resolve("agent-browser/package.json");
+		const { bin } = JSON.parse(readFileSync(manifest, "utf8")) as {
+			bin?: string | Record<string, string>;
+		};
+		const script = typeof bin === "string" ? bin : bin?.["agent-browser"];
+		return script ? join(dirname(manifest), script) : null;
+	} catch {
+		return null;
+	}
+}
 
 /**
  * Error thrown when agent-browser exits non-zero or returns an error payload.
@@ -96,7 +172,7 @@ export class AgentBrowserClient {
 	private readonly exec: AgentBrowserExec;
 
 	constructor(options: AgentBrowserClientOptions = {}) {
-		this.command = options.command ?? DEFAULT_AGENT_BROWSER_COMMAND;
+		this.command = options.command ?? defaultAgentBrowserCommand();
 		this.session = options.session;
 		this.timeoutMs = options.timeoutMs ?? 30_000;
 		this.exec = options.exec ?? spawnExec(this.command);
