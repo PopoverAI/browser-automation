@@ -81,6 +81,8 @@ export interface AgentBrowserLookup {
 	/** The Node running the recorder, which runs agent-browser's own script. */
 	execPath?: string;
 	exists?: (path: string) => boolean;
+	/** The system it runs on. */
+	platform?: NodeJS.Platform;
 }
 
 /**
@@ -124,6 +126,13 @@ export function defaultAgentBrowserCommand(
 	);
 	for (const cli of [npx, npxOnPosix]) {
 		if (exists(cli)) return [execPath, cli, "--yes", "agent-browser"];
+	}
+	// Windows can't start `npx.cmd` without a shell, so `npx` on the path
+	// would fail there as `spawn npx ENOENT`: say what to do instead.
+	if ((lookup.platform ?? process.platform) === "win32") {
+		throw new Error(
+			"agent-browser isn't installed, and npm's npx couldn't be found beside this Node to fetch it. Install agent-browser (npm install -g agent-browser), or pass --agent-browser with how to run it.",
+		);
 	}
 	return DEFAULT_AGENT_BROWSER_COMMAND;
 }

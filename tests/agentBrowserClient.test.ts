@@ -1,8 +1,14 @@
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
 	AgentBrowserClient,
@@ -191,10 +197,22 @@ describe("spawnExec", () => {
 });
 
 describe("defaultAgentBrowserCommand", () => {
+	/** Every folder a test made, removed after it. */
+	const made: string[] = [];
+	const folder = (prefix: string) => {
+		const dir = mkdtempSync(join(tmpdir(), prefix));
+		made.push(dir);
+		return dir;
+	};
+	afterEach(() => {
+		for (const dir of made.splice(0))
+			rmSync(dir, { recursive: true, force: true });
+	});
+
 	/** A folder with agent-browser installed in its node_modules, as npm or pnpm lays it out. */
 	const withAgentBrowser = () => {
 		// Resolved as Node resolves it, through the temp folder's symlink on macOS.
-		const root = realpathSync(mkdtempSync(join(tmpdir(), "ab-lookup-")));
+		const root = realpathSync(folder("ab-lookup-"));
 		const pkg = join(root, "node_modules", "agent-browser");
 		mkdirSync(join(pkg, "bin"), { recursive: true });
 		writeFileSync(
@@ -207,7 +225,7 @@ describe("defaultAgentBrowserCommand", () => {
 		writeFileSync(join(pkg, "bin", "agent-browser.js"), "");
 		return { root, script: join(pkg, "bin", "agent-browser.js") };
 	};
-	const empty = () => mkdtempSync(join(tmpdir(), "ab-none-"));
+	const empty = () => folder("ab-none-");
 	const NODE = join("/opt", "node", "bin", "node");
 
 	it("runs the project's installed agent-browser as its own script on this Node, with no npx or shell", () => {
@@ -260,7 +278,20 @@ describe("defaultAgentBrowserCommand", () => {
 				from: pathToFileURL(join(empty(), "cli.js")).href,
 				execPath: NODE,
 				exists: () => false,
+				platform: "darwin",
 			}),
 		).toEqual(DEFAULT_AGENT_BROWSER_COMMAND);
+	});
+
+	it("on Windows, with neither found, says to install agent-browser rather than failing to start npx", () => {
+		expect(() =>
+			defaultAgentBrowserCommand({
+				cwd: empty(),
+				from: pathToFileURL(join(empty(), "cli.js")).href,
+				execPath: NODE,
+				exists: () => false,
+				platform: "win32",
+			}),
+		).toThrow(/Install agent-browser .* or pass --agent-browser/);
 	});
 });
